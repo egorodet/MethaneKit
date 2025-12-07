@@ -1,8 +1,8 @@
 CPMAddPackage(
     NAME DirectXTex
     GITHUB_REPOSITORY MethanePowered/DirectXTex
-    GIT_TAG mar2025
-    VERSION 2.0.7
+    GIT_TAG oct2025
+    VERSION 2.0.9
     OPTIONS
         "BUILD_DX12 ON"
         "BUILD_DX11 OFF"

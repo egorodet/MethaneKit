@@ -6,5 +6,5 @@ endif()
 CPMAddPackage(
     NAME VulkanHeaders
     GITHUB_REPOSITORY MethanePowered/VulkanHeaders
-    VERSION 1.3.296
+    VERSION 1.4.335
 )

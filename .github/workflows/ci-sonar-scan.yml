@@ -152,7 +152,7 @@ jobs:
 
       # Ninja build is required to generate compile commands file used by Sonar-Scanner
       - name: Install Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
+        uses: seanmiddleditch/gha-setup-ninja@v6
         with:
           version: 1.11.1
 
