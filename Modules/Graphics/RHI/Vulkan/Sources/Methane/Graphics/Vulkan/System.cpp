@@ -131,9 +131,9 @@ static std::vector<const char*> GetEnabledExtensions(const std::vector<std::stri
     return enabled_extensions;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
-                                                           VkDebugUtilsMessageTypeFlagsEXT             message_types,
-                                                           const VkDebugUtilsMessengerCallbackDataEXT* callback_data_ptr,
+VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+                                                           vk::DebugUtilsMessageTypeFlagsEXT             message_types,
+                                                           const vk::DebugUtilsMessengerCallbackDataEXT* callback_data_ptr,
                                                            void* /*user_data_ptr*/) // NOSONAR
 {
     META_FUNCTION_TASK();
@@ -174,8 +174,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(VkDebugUtilsMessageSe
 #endif // !NDEBUG
 
     std::stringstream ss;
-    ss << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(message_severity)) << " "
-       << vk::to_string(static_cast<vk::DebugUtilsMessageTypeFlagsEXT>(message_types)) << ":" << std::endl;
+    ss << vk::to_string(message_severity) << " "
+       << vk::to_string(message_types) << ":" << std::endl;
     ss << "\t- messageIdName:   " << callback_data_ptr->pMessageIdName << std::endl;
     ss << "\t- messageIdNumber: " << callback_data_ptr->messageIdNumber << std::endl;
     ss << "\t- message:         " << callback_data_ptr->pMessage << std::endl;
