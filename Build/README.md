@@ -32,7 +32,11 @@
   ```
 - **MacOS**
   - MacOS 13 "Ventura" or later
-  - XCode 14 or later with command-line tools
+  - XCode 14 or later with Command-Line Tools
+  - Download Metal Toolchain
+  ```bash
+  xcodebuild -downloadComponent MetalToolchain
+  ```
 - **iOS / tvOS**
   - All MacOS prerequisites from above
   - iOS or tvOS simulator for running app in virtual environment
