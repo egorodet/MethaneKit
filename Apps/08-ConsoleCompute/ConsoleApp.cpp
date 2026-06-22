@@ -28,6 +28,7 @@ Console UI application base class implemented using FTXUI framework
 #include <Methane/Instrumentation.h>
 
 #include <fmt/format.h>
+#include <condition_variable>
 #include <thread>
 
 namespace Methane::Tutorials

@@ -1,7 +1,7 @@
 CPMAddPackage(
     NAME Catch2
     GITHUB_REPOSITORY MethanePowered/Catch2
-    VERSION 3.9.1
+    VERSION 3.15.1
 )
 
 list(APPEND CMAKE_MODULE_PATH "${Catch2_SOURCE_DIR}/extras")
