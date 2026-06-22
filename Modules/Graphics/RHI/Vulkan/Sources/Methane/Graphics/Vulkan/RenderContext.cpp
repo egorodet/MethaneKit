@@ -48,6 +48,8 @@ Vulkan implementation of the render context interface.
 namespace Methane::Graphics::Vulkan
 {
 
+static constexpr uint32_t g_image_acquire_timeout_ns = 5U * 1000000000U;
+
 #ifndef __APPLE__
 
 RenderContext::RenderContext(const Methane::Platform::AppEnvironment& app_env, Device& device,
@@ -263,7 +265,8 @@ uint32_t RenderContext::GetNextFrameBufferIndex()
 
     // Acquire next frame image with signalling GPU semaphore and CPU fence when image will be acquired
     uint32_t   next_image_index = 0;
-    switch (const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(), std::numeric_limits<uint64_t>::max(),
+    switch (const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(),
+                                                                                    g_image_acquire_timeout_ns,
                                                                                     curr_frame_sync.vk_unique_semaphore.get(),
                                                                                     curr_frame_sync.vk_unique_fence.get(),
                                                                                     &next_image_index);
