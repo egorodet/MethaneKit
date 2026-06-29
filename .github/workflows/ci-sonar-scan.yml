@@ -66,6 +66,10 @@ jobs:
   sonar_scan:
     name: ${{ matrix.name }}
 
+    permissions:
+      checks: write
+      pull-requests: write
+
     # Run sonar scan job only in context of the origin repository:
     # - Trigger on either "push" or "pull request" event for the origin repository owned branches
     # - Or trigger on "pull request target" event for external repositories to have access to secrets from origin repo context
@@ -298,7 +302,7 @@ jobs:
             --define sonar.projectKey=${{ matrix.sonar_project_key }}
             --define sonar.projectVersion=${METHANE_VERSION_MAJOR}.${METHANE_VERSION_MINOR}.${METHANE_VERSION_PATCH}.${METHANE_VERSION_BUILD}
             --define sonar.cfamily.compile-commands=Build/Output/${{ matrix.config_preset }}/Build/compile_commands.json
-            --define sonar.testExecutionReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests
+            --define sonar.testExecutionReportPaths=${{ env.test_results }}
             --define sonar.coverageReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/SonarQube.xml
             --define sonar.scm.revision=${{ github.sha }}
 
@@ -313,7 +317,7 @@ jobs:
             --define sonar.projectKey=${{ matrix.sonar_project_key }}
             --define sonar.projectVersion=${METHANE_VERSION_MAJOR}.${METHANE_VERSION_MINOR}.${METHANE_VERSION_PATCH}.${METHANE_VERSION_BUILD}
             --define sonar.cfamily.compile-commands=Build/Output/${{ matrix.config_preset }}/Build/compile_commands.json
-            --define sonar.testExecutionReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests
+            --define sonar.testExecutionReportPaths=${{ env.test_results }}
             --define sonar.coverageReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/SonarQube.xml
             --define sonar.scm.revision=${{ github.event.pull_request.head.sha }}
             --define sonar.pullrequest.provider=GitHub
