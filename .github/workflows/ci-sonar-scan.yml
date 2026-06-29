@@ -123,13 +123,13 @@ jobs:
     steps:
       - name: Checkout pull-request merge commit from origin
         if: ${{ github.event_name != 'pull_request_target' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # checkout all history for all branches, as required by Sonar scanner
 
       - name: Checkout pull-request merge commit from fork
         if: ${{ github.event_name == 'pull_request_target' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: "${{ github.event.pull_request.merge_commit_sha }}"
           fetch-depth: 0 # checkout all history for all branches, as required by Sonar scanner
@@ -158,7 +158,7 @@ jobs:
           version: 1.11.1
 
       - name: Initialize Externals Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Build/Output/ExternalsCache
           key: ExternalsCache-${{ matrix.config_preset }}-${{ hashFiles('Externals/*.cmake') }}
@@ -227,7 +227,7 @@ jobs:
 
       - name: Upload Code Coverage Cobertura Report
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MethaneKit_${{ matrix.name }}_CoverageResults
           path: Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/Cobertura.xml
@@ -334,7 +334,7 @@ jobs:
 
       - name: Upload Archived Scan Artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MethaneKit_${{ matrix.name }}_${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
           path: Build/Output/${{ matrix.config_preset }}/Install/MethaneKit_${{ matrix.name }}.7z

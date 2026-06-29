@@ -190,7 +190,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -209,7 +209,7 @@ jobs:
         run: ./Build/Unix/CI/InstallVulkanSdk.sh "${{ env.VULKAN_SDK_VERSION }}" "${{ runner.tool_cache }}/VulkanSDK"
 
       - name: Initialize Externals Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Build/Output/ExternalsCache
           key: ExternalsCache-${{ matrix.config_preset }}-${{ hashFiles('Externals/*.cmake') }}
@@ -235,7 +235,7 @@ jobs:
         run: ${{ github.workspace }}\Build\Windows\CI\RunUnitTests.bat junit
 
       - name: Upload Test Results Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: ${{ matrix.run_tests && (success() || failure()) }}
         with:
           name: MethaneKit_${{ matrix.name }}_TestResults_${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
@@ -278,7 +278,7 @@ jobs:
 
       - name: Upload Archived Build Artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MethaneKit_${{ matrix.name }}_${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
           path: ${{ env.INSTALL_DIR }}/MethaneKit_${{ matrix.name }}.7z
@@ -312,7 +312,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Upload Event File
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EventFile
           path: ${{ github.event_path }}
