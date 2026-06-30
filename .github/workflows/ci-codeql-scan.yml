@@ -66,6 +66,10 @@ jobs:
         sudo apt update
         sudo apt install xcb libx11-dev libx11-xcb-dev libxcb-sync-dev libxcb-randr0-dev
 
+    - name: Install MacOS prerequisites
+      if: ${{ matrix.os == 'macos-latest' }}
+      run: ./Build/Unix/CI/InstallMacOsPrerequisites.sh
+
     - name: Checkout repository
       uses: actions/checkout@v7
 

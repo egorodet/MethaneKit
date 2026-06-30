@@ -198,6 +198,10 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         run: ./Build/Unix/CI/InstallLinuxPrerequisites.sh
 
+      - name: Install MacOS prerequisites
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: ./Build/Unix/CI/InstallMacOsPrerequisites.sh
+
       - name: Install TestSpace
         if: ${{ github.repository == env.ORIGIN_REPOSITORY }}
         uses: testspace-com/setup-testspace@v1
