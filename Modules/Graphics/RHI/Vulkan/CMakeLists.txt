@@ -179,5 +179,7 @@ if (APPLE)
         ${PLATFORM_SOURCES_OBJC_ARC}
         PROPERTIES
             COMPILE_FLAGS -fobjc-arc
+            SKIP_PRECOMPILE_HEADERS ON
+            SKIP_UNITY_BUILD_INCLUSION ON
     )
 endif()
