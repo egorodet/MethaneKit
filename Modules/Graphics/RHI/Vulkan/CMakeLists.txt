@@ -94,8 +94,10 @@ if (APPLE)
     )
     set(PLATFORM_SOURCES_OBJC
         ${METAL_SOURCES}
-        ${SOURCES_DIR}/RenderContext.mm
         ${SOURCES_GRAPHICS_DIR}/${PLATFORM_DIR}/PlatformExt.mm
+    )
+    set(PLATFORM_SOURCES_OBJC_NO_ARC
+        ${SOURCES_DIR}/RenderContext.mm
     )
 endif()
 
@@ -165,6 +167,16 @@ if (APPLE)
         ${PLATFORM_SOURCES_OBJC}
         PROPERTIES
             COMPILE_FLAGS -fobjc-arc
+            SKIP_PRECOMPILE_HEADERS ON
+            SKIP_UNITY_BUILD_INCLUSION ON
+    )
+    # FIXME: Workaround for Vulkan SDK build error on MacOS with "-objc-arc" enabled:
+    #            vulkan/vulkan.hpp:8392:41: note: non-trivial destruction of type 'const CAMetalLayer *__strong'
+    #            in a constant expression is not supported
+    #        Workaround is to not enable "-fobjc-arc" for RenderContext.mm file and release pointers manually
+    set_source_files_properties(
+        ${PLATFORM_SOURCES_OBJC_NO_ARC}
+        PROPERTIES
             SKIP_PRECOMPILE_HEADERS ON
             SKIP_UNITY_BUILD_INCLUSION ON
     )

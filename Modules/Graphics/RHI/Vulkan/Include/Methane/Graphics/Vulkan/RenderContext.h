@@ -105,6 +105,7 @@ private:
     void ReleaseNativeSwapchainResources();
     void ResetNativeSwapchain();
     void ResetNativeObjectNames() const;
+    bool TryRelease();
 
     struct FrameSync
     {

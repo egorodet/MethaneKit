@@ -60,22 +60,13 @@ RenderContext::RenderContext(const Methane::Platform::AppEnvironment& app_env, D
     , m_vk_unique_surface(Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), app_env))
 { }
 
-#endif // #ifndef __APPLE__
-
 RenderContext::~RenderContext()
 {
     META_FUNCTION_TASK();
-    try
-    {
-        RenderContext::Release();
-    }
-    catch(const std::exception& e)
-    {
-        META_UNUSED(e);
-        META_LOG("WARNING: Unexpected error during Query destruction: {}", e.what());
-        assert(false);
-    }
+    TryRelease();
 }
+
+#endif // #ifndef __APPLE__
 
 [[nodiscard]] Ptr<Rhi::ITexture> RenderContext::CreateTexture(const Rhi::TextureSettings& settings) const
 {
@@ -103,6 +94,23 @@ void RenderContext::Release()
     META_FUNCTION_TASK();
     ReleaseNativeSwapchainResources();
     Context<Base::RenderContext>::Release();
+}
+
+bool RenderContext::TryRelease()
+{
+    META_FUNCTION_TASK();
+    try
+    {
+        RenderContext::Release();
+    }
+    catch(const std::exception& e)
+    {
+        META_UNUSED(e);
+        META_LOG("WARNING: Unexpected error during RenderContext release: {}", e.what());
+        assert(false);
+        return false;
+    }
+    return true;
 }
 
 bool RenderContext::SetName(std::string_view name)
