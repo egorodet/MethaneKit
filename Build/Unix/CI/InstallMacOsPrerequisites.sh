@@ -12,4 +12,6 @@ echo "XCode version: $XCODE_CURRENT_VERSION"
 if version_ge "$XCODE_CURRENT_VERSION" "26.0"; then
     echo "Downloading Metal toolchain..."
     xcodebuild -downloadComponent MetalToolchain
+    xcrun --find metal
+    xcrun metal -v
 fi
