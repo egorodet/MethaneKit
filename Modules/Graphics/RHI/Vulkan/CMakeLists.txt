@@ -92,18 +92,16 @@ if (APPLE)
     list(APPEND SOURCES
         ${SOURCES_DIR}/RenderContext.mm
     )
-    list(APPEND PLATFORM_SOURCES_OBJC
+    list(APPEND PLATFORM_SOURCES_OBJC_ARC
         ${METAL_SOURCES}
-        ${SOURCES_DIR}/RenderContext.mm
-        ${SOURCES_GRAPHICS_DIR}/${PLATFORM_DIR}/PlatformExt.mm
     )
     # FIXME: Workaround for Vulkan SDK build error on MacOS with "-objc-arc" enabled:
     #            "vulkan/vulkan.hpp:8392:41: note: non-trivial destruction of type 'const CAMetalLayer *__strong'
     #             in a constant expression is not supported"
-    #        Workaround is to enable "-fobjc-arc" for all Obj-C except RenderContext.mm and PlatformExt.mm sources
-    #        and release objective-c pointers manually
-    list(APPEND PLATFORM_SOURCES_OBJC_ARC
-        ${METAL_SOURCES}
+    #        Workaround is to disable Obj-C ARC for RenderContext.mm and PlatformExt.mm sources and release objective-c pointers manually
+    list(APPEND PLATFORM_SOURCES_OBJC_NO_ARC
+        ${SOURCES_DIR}/RenderContext.mm
+        ${SOURCES_DIR}/${PLATFORM_DIR}/PlatformExt.mm
     )
 endif()
 
@@ -170,15 +168,16 @@ set_target_properties(${TARGET}
 if (APPLE)
     source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/${METAL_DIR} FILES ${METAL_SOURCES})
     set_source_files_properties(
-        ${PLATFORM_SOURCES_OBJC}
+        ${PLATFORM_SOURCES_OBJC_ARC}
         PROPERTIES
+            COMPILE_FLAGS -fobjc-arc
             SKIP_PRECOMPILE_HEADERS ON
             SKIP_UNITY_BUILD_INCLUSION ON
     )
     set_source_files_properties(
-        ${PLATFORM_SOURCES_OBJC_ARC}
+        ${PLATFORM_SOURCES_OBJC_NO_ARC}
         PROPERTIES
-            COMPILE_FLAGS -fobjc-arc
+            COMPILE_FLAGS -fno-objc-arc
             SKIP_PRECOMPILE_HEADERS ON
             SKIP_UNITY_BUILD_INCLUSION ON
     )
