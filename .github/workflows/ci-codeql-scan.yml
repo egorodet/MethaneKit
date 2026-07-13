@@ -48,10 +48,11 @@ jobs:
             config_preset: "Make-Lin-VK-Scan"
             build_preset: "Make-Lin-VK-Scan"
 
-          - os: macos-latest
-            name: "MacOS_MTL_CodeQL-Scan"
-            config_preset: "Xcode-Mac-MTL-Scan"
-            build_preset: "Xcode-Mac-MTL-Scan"
+          # FIXME: disable CodeQL scan on MacOS because of an issue with Metal Toolchain availability
+          #- os: macos-latest
+          #  name: "MacOS_MTL_CodeQL-Scan"
+          #  config_preset: "Xcode-Mac-MTL-Scan"
+          #  build_preset: "Xcode-Mac-MTL-Scan"
 
     runs-on: ${{ matrix.os }}
 
