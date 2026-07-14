@@ -16,5 +16,9 @@ target_compile_definitions(HLSLpp INTERFACE
 if(MSVC)
     target_sources(HLSLpp INTERFACE ${HLSLpp_SOURCE_DIR}/include/hlsl++.natvis)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU") # GCC
-    target_compile_options(HLSLpp INTERFACE -Wno-deprecated-copy)
+    target_compile_options(HLSLpp
+        INTERFACE
+            -Wno-deprecated-copy
+            -Wno-cast-user-defined
+    )
 endif()

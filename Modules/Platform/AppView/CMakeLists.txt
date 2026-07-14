@@ -34,7 +34,7 @@ elseif(APPLE)
             COMPILE_FLAGS -fobjc-weak
     )
 
-elseif() # Linux
+else() # Linux
 
     list(APPEND PLATFORM_HEADERS
         ${INCLUDE_PLATFORM_OS_DIR}/AppEnvironment.h
