@@ -110,10 +110,11 @@ private:
     struct FrameSync
     {
         vk::UniqueSemaphore vk_unique_semaphore;
-        vk::UniqueFence     vk_unique_fence;
-        bool                is_submitted = false;
 
-        void Wait(const vk::Device& vk_device);
+        // Frame buffer index of the render submission which is going to wait for this semaphore,
+        // used to make sure that the GPU has finished waiting for it before acquireNextImageKHR
+        // signals it again (VUID-vkAcquireNextImageKHR-semaphore-01779).
+        Opt<Data::Index>    consumer_frame_index;
     };
 
 #ifdef __APPLE__
