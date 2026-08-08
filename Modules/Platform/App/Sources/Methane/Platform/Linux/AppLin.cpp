@@ -29,16 +29,7 @@ Linux application implementation.
 #include <Methane/Data/IProvider.h>
 #include <Methane/Checks.hpp>
 #include <Methane/Instrumentation.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_STATIC
-#define STBI_NO_STDIO
-#include <stb_image.h>
-
-#pragma GCC diagnostic pop
+#include <Methane/StbImage.h>
 
 #include <string_view>
 #include <optional>

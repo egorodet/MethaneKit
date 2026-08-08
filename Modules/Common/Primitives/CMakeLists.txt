@@ -12,6 +12,7 @@ set(HEADERS
     ${INCLUDE_DIR}/Timer.hpp
     ${INCLUDE_DIR}/Pimpl.h
     ${INCLUDE_DIR}/Pimpl.hpp
+    ${INCLUDE_DIR}/StbImage.h
 )
 
 set(SOURCES
