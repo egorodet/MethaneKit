@@ -162,7 +162,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(vk::DebugUtilsMessage
 
     if (callback_data_ptr->messageIdNumber == 0 && (
         strstr(callback_data_ptr->pMessage, "loader_get_json: Failed to open JSON file") ||
-        strstr(callback_data_ptr->pMessage, "terminator_CreateInstance: Failed to CreateInstance in ICD")))
+        strstr(callback_data_ptr->pMessage, "terminator_CreateInstance: Failed to CreateInstance in ICD") ||
+        strstr(callback_data_ptr->pMessage, "Removing layer") // because it is a duplicate of ...
+        ))
         return VK_FALSE;
 
     // Filter out validation error appeared due to missing HLSL extension for SPIRV bytecode, which can not be used because of bug in NVidia Windows drivers:
