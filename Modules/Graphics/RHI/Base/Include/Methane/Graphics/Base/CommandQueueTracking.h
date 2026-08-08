@@ -100,8 +100,28 @@ private:
     void InitializeTimestampQueryPool();
     void CompleteExecutionSafely();
     void WaitForExecution() noexcept;
+    bool IsFrontListExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
+    bool IsExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
 
-    const Ptr<CommandListSet>& GetNextExecutingCommandListSet() const;
+    Ptr<CommandListSet> PopNextExecutingCommandListSet();
+
+    template<typename CommandListSetFuncType>
+    void ProcessExecutingCommandListSet(const Opt<Data::Index>& frame_index, const CommandListSetFuncType& process_func)
+    {
+        std::scoped_lock lock_guard(m_executing_command_lists_mutex);
+        if (frame_index && !IsExecutingOnFrameIndex(frame_index))
+            return;
+
+        while (!m_executing_command_lists.empty())
+        {
+            const bool is_frame_target = IsFrontListExecutingOnFrameIndex(frame_index);
+            process_func(*m_executing_command_lists.front());
+            m_executing_command_lists.pop();
+            if (frame_index && is_frame_target)
+                break;
+        }
+        m_execution_waiting_condition_var.notify_one();
+    }
 
     CommandListSetsQueue                  m_executing_command_lists;
     mutable TracyLockable(std::mutex,     m_executing_command_lists_mutex);

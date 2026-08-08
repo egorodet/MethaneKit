@@ -38,24 +38,24 @@ Base implementation of the command queue with execution tracking.
 
 namespace Methane::Graphics::Base
 {
-
 static Tracy::GpuContext::Type ConvertSystemGraphicsApiToTracyGpuContextType(Rhi::NativeApi graphics_api)
 {
     META_FUNCTION_TASK();
-    switch(graphics_api)
+    switch (graphics_api)
     {
-    case Rhi::NativeApi::Undefined:    return Tracy::GpuContext::Type::Undefined;
-    case Rhi::NativeApi::DirectX:      return Tracy::GpuContext::Type::DirectX12;
-    case Rhi::NativeApi::Vulkan:       return Tracy::GpuContext::Type::Vulkan;
-    case Rhi::NativeApi::Metal:        return Tracy::GpuContext::Type::Metal;
+    case Rhi::NativeApi::Undefined: return Tracy::GpuContext::Type::Undefined;
+    case Rhi::NativeApi::DirectX: return Tracy::GpuContext::Type::DirectX12;
+    case Rhi::NativeApi::Vulkan: return Tracy::GpuContext::Type::Vulkan;
+    case Rhi::NativeApi::Metal: return Tracy::GpuContext::Type::Metal;
     default: META_UNEXPECTED_RETURN(graphics_api, Tracy::GpuContext::Type::Undefined);
     }
 };
 
 CommandQueueTracking::CommandQueueTracking(const Context& context, Rhi::CommandListType command_lists_type)
     : CommandQueue(context, command_lists_type)
-    , m_execution_waiting_thread(&CommandQueueTracking::WaitForExecution, this)
-{ }
+  , m_execution_waiting_thread(&CommandQueueTracking::WaitForExecution, this)
+{
+}
 
 CommandQueueTracking::~CommandQueueTracking()
 {
@@ -71,7 +71,8 @@ void CommandQueueTracking::InitializeTimestampQueryPool()
     if (!m_timestamp_query_pool_ptr)
         return;
 
-    const Rhi::ITimestampQueryPool::CalibratedTimestamps& calibrated_timestamps = m_timestamp_query_pool_ptr->GetCalibratedTimestamps();
+    const Rhi::ITimestampQueryPool::CalibratedTimestamps& calibrated_timestamps = m_timestamp_query_pool_ptr->
+        GetCalibratedTimestamps();
     InitializeTracyGpuContext(
         Tracy::GpuContext::Settings(
             ConvertSystemGraphicsApiToTracyGpuContextType(Rhi::ISystem::GetNativeApi()),
@@ -82,7 +83,8 @@ void CommandQueueTracking::InitializeTimestampQueryPool()
     );
 }
 
-void CommandQueueTracking::Execute(Rhi::ICommandListSet& command_lists, const Rhi::ICommandList::CompletedCallback& completed_callback)
+void CommandQueueTracking::Execute(Rhi::ICommandListSet&                       command_lists,
+                                   const Rhi::ICommandList::CompletedCallback& completed_callback)
 {
     META_FUNCTION_TASK();
     CommandQueue::Execute(command_lists, completed_callback);
@@ -90,12 +92,13 @@ void CommandQueueTracking::Execute(Rhi::ICommandListSet& command_lists, const Rh
     if (!m_execution_waiting)
     {
         m_execution_waiting_thread.join();
-        META_CHECK_NOT_NULL_DESCR(m_execution_waiting_exception_ptr, "Command queue '{}' execution waiting thread has unexpectedly finished", GetName());
+        META_CHECK_NOT_NULL_DESCR(m_execution_waiting_exception_ptr,
+                                  "Command queue '{}' execution waiting thread has unexpectedly finished", GetName());
         if (m_execution_waiting_exception_ptr)
             std::rethrow_exception(m_execution_waiting_exception_ptr);
     }
 
-    auto& command_lists_base = static_cast<CommandListSet&>(command_lists);
+    auto&            command_lists_base = static_cast<CommandListSet&>(command_lists);
     std::scoped_lock lock_guard(m_executing_command_lists_mutex);
     m_executing_command_lists.push(command_lists_base.GetBasePtr());
     m_execution_waiting_condition_var.notify_one();
@@ -114,27 +117,19 @@ bool CommandQueueTracking::SetName(std::string_view name)
 void CommandQueueTracking::CompleteExecution(const Opt<Data::Index>& frame_index)
 {
     META_FUNCTION_TASK();
-    std::scoped_lock lock_guard(m_executing_command_lists_mutex);
-    while (!m_executing_command_lists.empty() &&
-           m_executing_command_lists.front()->GetFrameIndex() == frame_index)
+    ProcessExecutingCommandListSet(frame_index, [](CommandListSet& command_list_set)
     {
-        m_executing_command_lists.front()->Complete();
-        m_executing_command_lists.pop();
-    }
-    m_execution_waiting_condition_var.notify_one();
+        command_list_set.Complete();
+    });
 }
 
 void CommandQueueTracking::WaitUntilCompleted(const Opt<Data::Index>& frame_index, uint32_t timeout_ms)
 {
     META_FUNCTION_TASK();
-    std::scoped_lock lock_guard(m_executing_command_lists_mutex);
-    while (!m_executing_command_lists.empty() &&
-           m_executing_command_lists.front()->GetFrameIndex() == frame_index)
+    ProcessExecutingCommandListSet(frame_index, [timeout_ms](CommandListSet& command_list_set)
     {
-        m_executing_command_lists.front()->WaitUntilCompleted(timeout_ms);
-        m_executing_command_lists.pop();
-    }
-    m_execution_waiting_condition_var.notify_one();
+        command_list_set.WaitUntilCompleted(timeout_ms);
+    });
 }
 
 void CommandQueueTracking::WaitForExecution() noexcept
@@ -145,7 +140,11 @@ void CommandQueueTracking::WaitForExecution() noexcept
         {
             std::unique_lock lock(m_execution_waiting_mutex);
             m_execution_waiting_condition_var.wait_for(lock, std::chrono::milliseconds(32),
-                [this] { return !m_execution_waiting || !m_executing_command_lists.empty(); }
+                                                       [this]
+                                                       {
+                                                           return !m_execution_waiting || !m_executing_command_lists.
+                                                                  empty();
+                                                       }
             );
 
             if (m_name_changed)
@@ -157,17 +156,17 @@ void CommandQueueTracking::WaitForExecution() noexcept
 
             while (!m_executing_command_lists.empty())
             {
-                Ptr<CommandListSet> command_list_set_ptr = GetNextExecutingCommandListSet();
+                Ptr<CommandListSet> command_list_set_ptr = PopNextExecutingCommandListSet();
                 if (!command_list_set_ptr)
                     break;
 
-                command_list_set_ptr->WaitUntilCompleted();
                 CompleteCommandListSetExecution(*command_list_set_ptr);
             }
 
             if (m_timestamp_query_pool_ptr)
             {
-                const Rhi::ITimestampQueryPool::CalibratedTimestamps calibrated_timestamps = m_timestamp_query_pool_ptr->Calibrate();
+                const Rhi::ITimestampQueryPool::CalibratedTimestamps calibrated_timestamps = m_timestamp_query_pool_ptr
+                    ->Calibrate();
                 GetTracyContext().Calibrate(calibrated_timestamps.cpu_ts, calibrated_timestamps.gpu_ts);
             }
         }
@@ -176,8 +175,34 @@ void CommandQueueTracking::WaitForExecution() noexcept
     catch (...)
     {
         m_execution_waiting_exception_ptr = std::current_exception();
-        m_execution_waiting = false;
+        m_execution_waiting               = false;
     }
+}
+
+bool CommandQueueTracking::IsFrontListExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept
+{
+    const Ptr<CommandListSet> command_list_set_ptr = m_executing_command_lists.front();
+    return command_list_set_ptr->GetFrameIndex() == frame_index;
+}
+
+bool CommandQueueTracking::IsExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept
+{
+    META_FUNCTION_TASK();
+    // Command list sets are completed strictly in submission (FIFO) order, so a specific target frame_index
+    // is not necessarily at the front of the queue - older frames (still executing or already completed, but
+    // not yet popped by this or the background execution-waiting thread) can be queued ahead of it. Stopping
+    // at the first front-queue mismatch (as opposed to draining through it) would silently skip waiting for
+    // the target frame's command lists, leaving them in the 'Executing' state and causing a subsequent Reset()
+    // of their command lists to fail.
+    std::queue<Ptr<CommandListSet>> executing_command_lists = m_executing_command_lists;
+    while (!executing_command_lists.empty())
+    {
+        if (executing_command_lists.front()->GetFrameIndex() == frame_index)
+            return true;
+
+        executing_command_lists.pop();
+    }
+    return false;
 }
 
 Ptr<CommandListSet> CommandQueueTracking::GetLastExecutingCommandListSet() const
@@ -196,25 +221,31 @@ const Ptr<Rhi::ITimestampQueryPool>& CommandQueueTracking::GetTimestampQueryPool
     return m_timestamp_query_pool_ptr;
 }
 
-const Ptr<CommandListSet>& CommandQueueTracking::GetNextExecutingCommandListSet() const
+Ptr<CommandListSet> CommandQueueTracking::PopNextExecutingCommandListSet()
 {
     META_FUNCTION_TASK();
+    // The wait is performed here, while still holding the queue lock, so that popping a command list set
+    // out of the queue and actually completing it are one atomic step from the point of view of other
+    // callers (WaitUntilCompleted/CompleteExecution) - otherwise a concurrent caller could observe the
+    // entry as already gone from the queue while it is still in the 'Executing' state, and skip waiting
+    // for it, leading to a later Reset() of its command lists failing.
     std::scoped_lock lock_guard(m_executing_command_lists_mutex);
-
-    static const Ptr<CommandListSet> s_empty_command_list_set_ptr;
     if (m_executing_command_lists.empty())
-        return s_empty_command_list_set_ptr;
+        return {};
 
     META_CHECK_NOT_NULL(m_executing_command_lists.front());
-    return m_executing_command_lists.front();
+    Ptr<CommandListSet> command_list_set_ptr = m_executing_command_lists.front();
+    m_executing_command_lists.pop();
+    command_list_set_ptr->WaitUntilCompleted();
+    return command_list_set_ptr;
 }
 
 void CommandQueueTracking::CompleteCommandListSetExecution(CommandListSet& executing_command_list_set)
 {
     META_FUNCTION_TASK();
     std::unique_lock lock_guard(m_executing_command_lists_mutex);
-
-    if (!m_executing_command_lists.empty() && m_executing_command_lists.front().get() == std::addressof(executing_command_list_set))
+    if (!m_executing_command_lists.empty() &&
+        m_executing_command_lists.front().get() == std::addressof(executing_command_list_set))
     {
         m_executing_command_lists.pop();
     }
@@ -246,11 +277,11 @@ void CommandQueueTracking::CompleteExecutionSafely()
     catch (const std::exception& ex) // NOSONAR
     {
         META_UNUSED(ex);
-        META_LOG("WARNING: Command queue '{}' has failed to complete command list execution, exception occurred: {}", GetName(), ex.what());
+        META_LOG("WARNING: Command queue '{}' has failed to complete command list execution, exception occurred: {}",
+                 GetName(), ex.what());
         assert(false);
     }
 
     m_execution_waiting = false;
 }
-
 } // namespace Methane::Graphics::Base
