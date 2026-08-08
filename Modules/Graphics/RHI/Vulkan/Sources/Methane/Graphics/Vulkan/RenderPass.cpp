@@ -152,8 +152,11 @@ vk::UniqueFramebuffer RenderPass::CreateNativeFrameBuffer(const vk::Device& vk_d
     if (m_attachment_views.empty())
     {
         std::ranges::transform(settings.attachments, std::back_inserter(m_attachment_views),
-                       [](const Rhi::TextureView& texture_location)
-                       { return Vulkan::ResourceView(texture_location, Rhi::ResourceUsageMask(Rhi::ResourceUsage::RenderTarget)); });
+                       [&settings](const Rhi::TextureView& texture_view)
+                       {
+                           META_CHECK_EQUAL(texture_view.GetTexture().GetSettings().dimensions.AsRectSize(), settings.frame_size);
+                           return ResourceView(texture_view, Rhi::ResourceUsageMask(Rhi::ResourceUsage::RenderTarget));
+                       });
     }
 
     std::vector<vk::ImageView> vk_attachment_views;
