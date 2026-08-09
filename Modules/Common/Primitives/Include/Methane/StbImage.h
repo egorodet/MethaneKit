@@ -29,10 +29,15 @@ NOTE: STB target should be linked where STB is actually used.
 #pragma warning(push)
 #pragma warning(disable: 4505) // unreferenced function with internal linkage has been removed
 
+#elif defined(__clang__) // Clang or AppleClang compiler
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+
 #elif defined(__GNUC__) // GCC compiler
 
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function -Wno-sign-compare -Wno-unused-but-set-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 // Disable stb_image SSE2 path: with GCC in Debug build and a precompiled header, the always-inline
 // _mm_slli_si128/_mm_srli_si128 intrinsics fail in Ninja-Multiconfig Debug builds,
@@ -40,11 +45,6 @@ NOTE: STB target should be linked where STB is actually used.
 #ifndef NDEBUG
 #define STBI_NO_SIMD
 #endif
-
-#elif defined(__clang__) // Clang or AppleClang compiler
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wno-sign-compare"
 
 #endif // End of compiler branching
 
@@ -58,12 +58,12 @@ NOTE: STB target should be linked where STB is actually used.
 
 #pragma warning(pop)
 
-#elif defined(__GNUC__) // GCC compiler
-
-#pragma GCC diagnostic pop
-
 #elif defined(__clang__) // Clang or AppleClang compiler
 
 #pragma clang diagnostic pop
+
+#elif defined(__GNUC__) // GCC compiler
+
+#pragma GCC diagnostic pop
 
 #endif // End of compiler branching
