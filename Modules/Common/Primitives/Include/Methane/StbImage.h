@@ -24,20 +24,25 @@ NOTE: STB target should be linked where STB is actually used.
 
 #pragma once
 
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
+
+// Disable stb_image SSE2 path: with GCC in Debug build and a precompiled header, the always-inline
+// _mm_slli_si128/_mm_srli_si128 intrinsics fail in Ninja-Multiconfig Debug builds,
+// causing "the last argument must be an 8-bit immediate" errors.
+#ifndef NDEBUG
+#define STBI_NO_SIMD
+#endif
+
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #define STBI_NO_STDIO
 
-// Disable stb_image SSE2 path: with GCC in Debug build and a precompiled header, the always-inline
-// _mm_slli_si128/_mm_srli_si128 intrinsics fail in Ninja-Multiconfig Debug builds,
-// causing "the last argument must be an 8-bit immediate" errors.
-#if defined(__GNUC__) && !defined(NDEBUG)
-    #define STBI_NO_SIMD
-#endif
-
 #include <stb_image.h>
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
