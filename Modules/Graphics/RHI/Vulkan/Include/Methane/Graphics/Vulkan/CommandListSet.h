@@ -31,7 +31,6 @@ Vulkan command list set implementation.
 
 namespace Methane::Graphics::Vulkan
 {
-
 class CommandQueue;
 
 class CommandListSet final
@@ -45,8 +44,11 @@ public:
     void WaitUntilCompleted(uint32_t timeout_ms) override;
 
     const std::vector<vk::CommandBuffer>& GetNativeCommandBuffers() const noexcept { return m_vk_command_buffers; }
-    const vk::Semaphore& GetNativeExecutionCompletedSemaphore() const noexcept     { return m_vk_unique_execution_completed_semaphore.get(); }
-    const vk::Fence&     GetNativeExecutionCompletedFence() const noexcept         { return m_vk_unique_execution_completed_fence.get(); }
+    const vk::Semaphore& GetNativeExecutionCompletedSemaphore() const;
+    const vk::Fence& GetNativeExecutionCompletedFence() const noexcept
+    {
+        return m_vk_unique_execution_completed_fence.get();
+    }
 
     CommandQueue&       GetVulkanCommandQueue() noexcept;
     const CommandQueue& GetVulkanCommandQueue() const noexcept;
@@ -57,11 +59,11 @@ protected:
 
 private:
     using SubmitInfo = std::pair<vk::SubmitInfo, vk::TimelineSemaphoreSubmitInfo>;
-    SubmitInfo GetSubmitInfo();
+    SubmitInfo                                 GetSubmitInfo();
     const std::vector<vk::Semaphore>&          GetWaitSemaphores();
     const std::vector<vk::PipelineStageFlags>& GetWaitStages();
     const std::vector<uint64_t>&               GetWaitValues();
-    void UpdateNativeDebugName();
+    void                                       UpdateNativeDebugName() const;
 
     const vk::PipelineStageFlags        m_vk_wait_frame_buffer_rendering_on_stages;
     const vk::Device&                   m_vk_device;
@@ -69,10 +71,9 @@ private:
     std::vector<vk::Semaphore>          m_vk_wait_semaphores;
     std::vector<vk::PipelineStageFlags> m_vk_wait_stages;
     std::vector<uint64_t>               m_vk_wait_values;
-    vk::UniqueSemaphore                 m_vk_unique_execution_completed_semaphore;
+    mutable vk::UniqueSemaphore         m_vk_unique_execution_completed_semaphore;
     vk::UniqueFence                     m_vk_unique_execution_completed_fence;
     bool                                m_signalled_execution_completed_fence = false;
     TracyLockable(std::mutex,           m_execution_completed_fence_mutex);
 };
-
 } // namespace Methane::Graphics::Vulkan

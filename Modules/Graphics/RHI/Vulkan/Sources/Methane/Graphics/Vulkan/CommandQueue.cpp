@@ -219,7 +219,8 @@ const CommandQueue::WaitInfo& CommandQueue::GetWaitForExecutionCompleted() const
         executing_command_list_sets.pop();
     }
 
-    m_wait_execution_completed.stages.resize(m_wait_execution_completed.semaphores.size(), vk::PipelineStageFlagBits::eBottomOfPipe);
+    m_wait_execution_completed.stages.resize(m_wait_execution_completed.semaphores.size(),
+                                             vk::PipelineStageFlagBits::eBottomOfPipe);
     return m_wait_execution_completed;
 }
 
@@ -249,11 +250,17 @@ void CommandQueue::ResetWaitForFrameExecution(Data::Index frame_index)
 void CommandQueue::AddWaitForFrameExecution(const Rhi::ICommandListSet& command_list_set)
 {
     META_FUNCTION_TASK();
-    if (GetCommandListType() != Rhi::CommandListType::Render)
+    // Execution completed binary semaphore is awaited only by the frame presentation
+    // (see CommandQueue::AddWaitForFrameExecution() and RenderContext::Present()),
+    // so it is created and signalled only for the command list sets rendering a particular frame buffer.
+    // Signalling it for any other command list set (like resource uploading or upload synchronization helper lists)
+    // would leave the binary semaphore signalled forever, because nothing ever waits on it, which is reported
+    // by the validation layer as VUID-vkQueueSubmit-pSignalSemaphores-00067 error on the next execution of the same set.
+    if (GetCommandListType() != Rhi::CommandListType::Render || !command_list_set.GetFrameIndex())
         return;
 
     const auto& vulkan_command_list_set = static_cast<const CommandListSet&>(command_list_set);
-    const Data::Index wait_info_index = command_list_set.GetFrameIndex().value_or(0U);
+    const Data::Index wait_info_index = command_list_set.GetFrameIndex().value();
 
     std::scoped_lock lock_guard(m_wait_frame_execution_completed_mutex);
 

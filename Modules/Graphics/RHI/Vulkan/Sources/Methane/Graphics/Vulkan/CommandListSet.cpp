@@ -104,7 +104,6 @@ CommandListSet::CommandListSet(const Refs<Rhi::ICommandList>& command_list_refs,
     : Base::CommandListSet(command_list_refs, frame_index_opt)
     , m_vk_wait_frame_buffer_rendering_on_stages(GetFrameBufferRenderingWaitStages(command_list_refs))
     , m_vk_device(GetVulkanCommandQueue().GetVulkanContext().GetVulkanDevice().GetNativeDevice())
-    , m_vk_unique_execution_completed_semaphore(m_vk_device.createSemaphoreUnique(vk::SemaphoreCreateInfo()))
     , m_vk_unique_execution_completed_fence(m_vk_device.createFenceUnique(vk::FenceCreateInfo()))
 {
     META_FUNCTION_TASK();
@@ -121,6 +120,16 @@ CommandListSet::CommandListSet(const Refs<Rhi::ICommandList>& command_list_refs,
     }
 
     UpdateNativeDebugName();
+}
+
+const vk::Semaphore& CommandListSet::GetNativeExecutionCompletedSemaphore() const
+{
+    if (!m_vk_unique_execution_completed_semaphore)
+    {
+        m_vk_unique_execution_completed_semaphore = m_vk_device.createSemaphoreUnique(vk::SemaphoreCreateInfo());
+        UpdateNativeDebugName();
+    }
+    return m_vk_unique_execution_completed_semaphore.get();
 }
 
 void CommandListSet::Execute(const Rhi::ICommandList::CompletedCallback& completed_callback)
@@ -209,9 +218,14 @@ CommandListSet::SubmitInfo CommandListSet::GetSubmitInfo()
     submit_info.first = vk::SubmitInfo(
         vk_wait_semaphores,
         vk_wait_stages,
-        m_vk_command_buffers,
-        m_vk_unique_execution_completed_semaphore.get()
+        m_vk_command_buffers
     );
+
+    if (const vk::Semaphore& vk_execution_completed_semaphore = m_vk_unique_execution_completed_semaphore.get();
+        vk_execution_completed_semaphore)
+    {
+        submit_info.first.setSignalSemaphores(vk_execution_completed_semaphore);
+    }
 
     if (!vk_wait_values.empty())
     {
@@ -229,11 +243,14 @@ void CommandListSet::OnObjectNameChanged(Rhi::IObject& object, const std::string
     UpdateNativeDebugName();
 }
 
-void CommandListSet::UpdateNativeDebugName()
+void CommandListSet::UpdateNativeDebugName() const
 {
     META_FUNCTION_TASK();
     const std::string execution_completed_name = fmt::format("{} Execution Completed", GetCombinedName());
-    SetVulkanObjectName(m_vk_device, m_vk_unique_execution_completed_semaphore.get(), execution_completed_name);
+    if (m_vk_unique_execution_completed_semaphore)
+    {
+        SetVulkanObjectName(m_vk_device, m_vk_unique_execution_completed_semaphore.get(), execution_completed_name);
+    }
     SetVulkanObjectName(m_vk_device, m_vk_unique_execution_completed_fence.get(), execution_completed_name);
 }
 

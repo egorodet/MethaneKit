@@ -102,7 +102,7 @@ const CommandList& CommandListSet::GetBaseCommandList(Data::Index index) const
     return m_base_refs[index].get();
 }
 
-const std::string& CommandListSet::GetCombinedName()
+const std::string& CommandListSet::GetCombinedName() const
 {
     META_FUNCTION_TASK();
     if (!m_combined_name.empty())
