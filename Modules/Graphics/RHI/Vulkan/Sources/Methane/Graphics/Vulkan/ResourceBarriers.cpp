@@ -158,6 +158,18 @@ const ResourceBarriers::NativePipelineBarrier& ResourceBarriers::GetNativePipeli
     native_pipeline_barrier.vk_src_stage_mask &= vk_supported_stage_flags;
     native_pipeline_barrier.vk_dst_stage_mask &= vk_supported_stage_flags;
 
+    // Resource states may be mapped to the pipeline stages, which are not supported by the target command queue
+    // (i.e. transition to ShaderResource state executed on the Transfer queue), so the masked out stage flags may
+    // become empty, which is not allowed unless synchronization2 feature is enabled
+    // (VUID-vkCmdPipelineBarrier-srcStageMask-03937, VUID-vkCmdPipelineBarrier-dstStageMask-03937).
+    // TopOfPipe/BottomOfPipe stages are used in this case, since they are supported by all command queue types
+    // and do not add any extra synchronization to the pipeline barrier.
+    if (!native_pipeline_barrier.vk_src_stage_mask)
+        native_pipeline_barrier.vk_src_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
+
+    if (!native_pipeline_barrier.vk_dst_stage_mask)
+        native_pipeline_barrier.vk_dst_stage_mask = vk::PipelineStageFlagBits::eBottomOfPipe;
+
     const vk::AccessFlags vk_supported_access_flags = target_cmd_queue.GetNativeSupportedAccessFlags();
     UpdateNativeBarrierAccessFlags(native_pipeline_barrier.vk_buffer_memory_barriers, vk_supported_access_flags);
     UpdateNativeBarrierAccessFlags(native_pipeline_barrier.vk_image_memory_barriers, vk_supported_access_flags);

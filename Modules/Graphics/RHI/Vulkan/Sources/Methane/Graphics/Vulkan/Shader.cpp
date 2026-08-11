@@ -37,6 +37,79 @@ Vulkan implementation of the shader interface.
 namespace Methane::Graphics::Vulkan
 {
 
+// Number of words in the SPIRV byte code header, which is followed by the instructions stream
+constexpr size_t g_spirv_header_words_count = 5U;
+
+static bool IsHlslReflectionDecoration(uint32_t decoration)
+{
+    META_FUNCTION_TASK();
+    return decoration == spv::DecorationHlslCounterBufferGOOGLE ||
+           decoration == spv::DecorationHlslSemanticGOOGLE ||
+           decoration == spv::DecorationUserTypeGOOGLE;
+}
+
+static bool IsHlslReflectionExtension(const char* extension_name)
+{
+    META_FUNCTION_TASK();
+    return std::string_view(extension_name) == "SPV_GOOGLE_hlsl_functionality1" ||
+           std::string_view(extension_name) == "SPV_GOOGLE_user_type";
+}
+
+// Shaders are compiled from HLSL to SPIRV with the '-fspv-reflect' DXC option, which decorates SPIRV byte code
+// with the HLSL reflection information (semantic names, user types and counter buffers) declared by the
+// SPV_GOOGLE_hlsl_functionality1 and SPV_GOOGLE_user_type extensions. HLSL semantic names are used by Methane
+// to match vertex shader inputs with the program input buffer layouts (see InitializeVertexInputDescriptions),
+// but the shader module can be created only when the corresponding device extensions are supported by the driver.
+// So the reflection information is removed from the byte code copy used for the shader module creation, to avoid
+// validation error VUID-VkShaderModuleCreateInfo-pCode-08742, while the original byte code is kept for reflection.
+static std::vector<uint32_t> RemoveHlslReflectionFromSpirv(const uint32_t* spirv_data_ptr, size_t spirv_words_count)
+{
+    META_FUNCTION_TASK();
+    META_CHECK_GREATER_OR_EQUAL(spirv_words_count, g_spirv_header_words_count);
+
+    std::vector<uint32_t> stripped_spirv;
+    stripped_spirv.reserve(spirv_words_count);
+    stripped_spirv.assign(spirv_data_ptr, spirv_data_ptr + g_spirv_header_words_count);
+
+    for (size_t word_index = g_spirv_header_words_count; word_index < spirv_words_count;)
+    {
+        const uint32_t instruction    = spirv_data_ptr[word_index];
+        const auto     op_code        = static_cast<spv::Op>(instruction & spv::OpCodeMask);
+        const size_t   op_words_count = instruction >> spv::WordCountShift;
+        META_CHECK_GREATER_DESCR(op_words_count, 0U, "SPIRV instruction word count can not be zero");
+
+        bool is_reflection_instruction = false;
+        switch (op_code) // NOSONAR - do not add default case to switch
+        {
+        case spv::OpExtension:
+            is_reflection_instruction = IsHlslReflectionExtension(reinterpret_cast<const char*>(&spirv_data_ptr[word_index + 1])); // NOSONAR
+            break;
+
+        case spv::OpDecorateId:
+        case spv::OpDecorateString:
+            is_reflection_instruction = op_words_count > 2U && IsHlslReflectionDecoration(spirv_data_ptr[word_index + 2]);
+            break;
+
+        case spv::OpMemberDecorateString:
+            is_reflection_instruction = op_words_count > 3U && IsHlslReflectionDecoration(spirv_data_ptr[word_index + 3]);
+            break;
+
+        default:
+            break;
+        }
+
+        if (!is_reflection_instruction)
+        {
+            stripped_spirv.insert(stripped_spirv.end(),
+                                  spirv_data_ptr + word_index,
+                                  spirv_data_ptr + word_index + op_words_count);
+        }
+        word_index += op_words_count;
+    }
+
+    return stripped_spirv;
+}
+
 static vk::VertexInputRate ConvertInputBufferLayoutStepTypeToVertexInputRate(Rhi::IProgram::InputBufferLayout::StepType step_type)
 {
     META_FUNCTION_TASK();
@@ -270,13 +343,27 @@ Ptrs<Base::ProgramArgumentBinding> Shader::GetArgumentBindings(const Rhi::Progra
 const vk::ShaderModule& Shader::GetNativeModule() const
 {
     META_FUNCTION_TASK();
-    if (!m_vk_unique_module)
+    if (m_vk_unique_module)
+        return m_vk_unique_module.get();
+
+    const Device& device = m_vk_context.GetVulkanDevice();
+    if (device.IsExtensionSupported(VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME) &&
+        device.IsExtensionSupported(VK_GOOGLE_USER_TYPE_EXTENSION_NAME))
     {
-        m_vk_unique_module = m_vk_context.GetVulkanDevice().GetNativeDevice().createShaderModuleUnique(
+        m_vk_unique_module = device.GetNativeDevice().createShaderModuleUnique(
             vk::ShaderModuleCreateInfo(
                 vk::ShaderModuleCreateFlags{},
                 m_byte_code_chunk.GetDataSize(),
                 m_byte_code_chunk.AsConstChunk().GetDataPtr<uint32_t>())
+        );
+    }
+    else
+    {
+        // Device does not support HLSL reflection extensions, so it is removed from the shader module byte code
+        const std::vector<uint32_t> stripped_byte_code = RemoveHlslReflectionFromSpirv(m_byte_code_chunk.AsConstChunk().GetDataPtr<uint32_t>(),
+                                                                                       m_byte_code_chunk.GetDataSize<uint32_t>());
+        m_vk_unique_module = device.GetNativeDevice().createShaderModuleUnique(
+            vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags{}, stripped_byte_code)
         );
     }
     return m_vk_unique_module.get();

@@ -358,10 +358,33 @@ vk::UniquePipeline RenderState::CreateNativePipeline(const ViewState* view_state
         settings.blending_color.AsArray()
     );
 
+    // Primitive restart can not be disabled in Metal, so MoltenVK reports warning
+    // "VK_ERROR_FEATURE_NOT_PRESENT: Metal does not support disabling primitive restart" for the pipelines created
+    // with 'primitiveRestartEnable = false' and with either the strip or the dynamic primitive topology.
+    // So primitive restart is enabled in these pipelines on the devices which can not disable it, to match behavior
+    // of the underlying graphics API. Primitive restart is not enabled for the list topologies, because it is allowed
+    // only with the VK_EXT_primitive_topology_list_restart extension and it does not affect rendering of the lists.
+    const Device& device = m_vk_render_context.GetVulkanDevice();
+    const bool is_dynamic_topology = !render_primitive_opt.has_value();
+    const bool is_strip_topology   = render_primitive_opt == Rhi::RenderPrimitive::LineStrip ||
+                                     render_primitive_opt == Rhi::RenderPrimitive::TriangleStrip;
+    const bool is_primitive_restart_enabled = device.IsPrimitiveRestartAlwaysEnabled() &&
+                                              (is_strip_topology || is_dynamic_topology);
+
+    // Primitive topology from the pipeline create info is ignored when it is set dynamically with the command list
+    // (see RenderCommandList::UpdatePrimitiveTopology), so the triangle strip topology is used in that case
+    // to enable primitive restart without the VK_EXT_primitive_topology_list_restart extension.
+    // Note that the triangle strip belongs to the same topology class as the triangle list,
+    // which is required for the dynamic topology changes.
+    const vk::PrimitiveTopology vk_primitive_topology =
+        render_primitive_opt           ? GetVulkanPrimitiveTopology(*render_primitive_opt) :
+        is_primitive_restart_enabled   ? vk::PrimitiveTopology::eTriangleStrip
+                                       : vk::PrimitiveTopology::eTriangleList;
+
     vk::PipelineInputAssemblyStateCreateInfo assembly_info(
         vk::PipelineInputAssemblyStateCreateFlags{},
-        render_primitive_opt ? GetVulkanPrimitiveTopology(*render_primitive_opt) : vk::PrimitiveTopology::eTriangleList,
-        false
+        vk_primitive_topology,
+        is_primitive_restart_enabled
     );
 
     vk::PipelineViewportStateCreateInfo empty_viewport_info(

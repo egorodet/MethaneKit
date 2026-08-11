@@ -213,6 +213,7 @@ Device::Device(const vk::PhysicalDevice& vk_physical_device, const vk::SurfaceKH
     , m_supported_extension_names_storage(GetDeviceSupportedExtensionNames(vk_physical_device))
     , m_supported_extension_names_set(m_supported_extension_names_storage.begin(), m_supported_extension_names_storage.end())
     , m_is_dynamic_state_supported(IsExtensionSupported(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME))
+    , m_is_portability_subset_supported(IsExtensionSupported(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
     , m_vk_queue_family_properties(vk_physical_device.getQueueFamilyProperties())
 {
     META_FUNCTION_TASK();
@@ -251,9 +252,22 @@ Device::Device(const vk::PhysicalDevice& vk_physical_device, const vk::SurfaceKH
         }
     }
 
-    if (IsExtensionSupported(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
+    if (m_is_portability_subset_supported)
     {
         enabled_extension_names.emplace_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+    }
+
+    // Shaders are compiled from HLSL to SPIRV with '-fspv-reflect' DXC option, which adds SPV_GOOGLE_hlsl_functionality1
+    // and SPV_GOOGLE_user_type extension declarations to the SPIRV byte code. HLSL semantic names decorated with
+    // SPV_GOOGLE_hlsl_functionality1 are used to match vertex shader inputs with vertex buffer layouts (see Shader.cpp).
+    // These device extensions have to be enabled to make that SPIRV byte code valid (VUID-VkShaderModuleCreateInfo-pCode-08742).
+    for(const std::string_view extension_name : { std::string_view(VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME),
+                                                  std::string_view(VK_GOOGLE_USER_TYPE_EXTENSION_NAME) })
+    {
+        if (IsExtensionSupported(extension_name))
+        {
+            enabled_extension_names.emplace_back(extension_name);
+        }
     }
 
     std::vector<const char*> raw_enabled_extension_names;

@@ -101,6 +101,7 @@ public:
     const vk::QueueFamilyProperties& GetNativeQueueFamilyProperties(uint32_t queue_family_index) const;
     bool                             IsExtensionSupported(std::string_view required_extension) const;
     bool                             IsDynamicStateSupported() const noexcept { return m_is_dynamic_state_supported; }
+    bool                             IsPrimitiveRestartAlwaysEnabled() const noexcept { return m_is_portability_subset_supported; }
 
 private:
     using QueueFamilyReservationByType = std::map<Rhi::CommandListType, Ptr<QueueFamilyReservation>>;
@@ -115,6 +116,7 @@ private:
     const std::vector<std::string>         m_supported_extension_names_storage;
     const std::set<std::string_view>       m_supported_extension_names_set;
     const bool                             m_is_dynamic_state_supported = false;
+    const bool                             m_is_portability_subset_supported = false;
     std::vector<vk::QueueFamilyProperties> m_vk_queue_family_properties;
     vk::UniqueDevice                       m_vk_unique_device;
     QueueFamilyReservationByType           m_queue_family_reservation_by_type;
