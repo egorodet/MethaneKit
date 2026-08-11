@@ -281,7 +281,16 @@ Device::Device(const vk::PhysicalDevice& vk_physical_device, const vk::SurfaceKH
     vk_device_timeline_semaphores_feature.setPNext(&vk_device_host_query_reset_feature);
 
     m_vk_unique_device = vk_physical_device.createDeviceUnique(vk_device_info);
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_vk_unique_device.get());
+
+    // NOTE: VULKAN_HPP_DEFAULT_DISPATCHER is intentionally NOT specialized with the created device here.
+    //       System::UpdateGpuDevices() constructs a Device for every physical device in the system, and the
+    //       default dispatcher is a single global object: VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Device) would
+    //       resolve all device-level entry points via vkGetDeviceProcAddr for that one device, so the device
+    //       constructed last would silently win. On a multi-GPU system (e.g. NVIDIA + AMD) the rendering device
+    //       would then dispatch its calls into another vendor's ICD, which returns garbage or crashes.
+    //       The instance-level pointers loaded by System's VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Instance)
+    //       are loader trampolines which dispatch to the ICD owning the handle passed in, so they are valid
+    //       for every device, at the cost of one extra indirection per call.
 }
 
 Ptr<Rhi::IRenderContext> Device::CreateRenderContext(const Methane::Platform::AppEnvironment& env, tf::Executor& parallel_executor, const Rhi::RenderContextSettings& settings)

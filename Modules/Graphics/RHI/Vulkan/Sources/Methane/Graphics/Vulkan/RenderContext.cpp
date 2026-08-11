@@ -48,7 +48,9 @@ Vulkan implementation of the render context interface.
 namespace Methane::Graphics::Vulkan
 {
 
-static constexpr uint32_t g_image_acquire_timeout_ns = 5U * 1000000000U;
+// NOTE: must be 64-bit, because 5 seconds in nanoseconds does not fit in 32 bits
+//       and would silently wrap around to ~0.7 seconds.
+static constexpr uint64_t g_image_acquire_timeout_ns = 5ULL * 1000000000ULL;
 
 #ifndef __APPLE__
 
@@ -127,6 +129,7 @@ void RenderContext::Initialize(Base::Device& device, bool is_callback_emitted)
 {
     META_FUNCTION_TASK();
     SetDevice(device);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(GetVulkanDevice().GetNativeDevice());
     InitializeNativeSwapchain();
     Context<Base::RenderContext>::Initialize(device, is_callback_emitted);
 }
@@ -410,6 +413,12 @@ void RenderContext::InitializeNativeSwapchain()
     m_vk_frame_images = m_vk_device.getSwapchainImagesKHR(GetNativeSwapchain());
     m_vk_frame_format = swap_surface_format.format;
     m_vk_frame_extent = swap_extent;
+
+    // Guard against a swapchain which reports no images at all: frame buffers count would be invalidated to zero,
+    // leaving the context without any frame synchronization semaphores and failing in an obscure way much later.
+    META_CHECK_NOT_ZERO_DESCR(m_vk_frame_images.size(),
+                              "swapchain was created with {} images, but no swapchain images were returned by the device",
+                              image_count);
 
     if (m_vk_frame_images.size() != GetSettings().frame_buffers_count)
         InvalidateFrameBuffersCount(static_cast<uint32_t>(m_vk_frame_images.size()));
