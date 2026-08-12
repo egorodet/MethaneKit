@@ -1,7 +1,7 @@
 CPMAddPackage(
     NAME DirectXHeaders
     GITHUB_REPOSITORY MethanePowered/DirectXHeaders
-    VERSION 1.619.1
+    VERSION 1.619.5
 )
 
 set_target_properties(DirectX-Headers DirectX-Guids
