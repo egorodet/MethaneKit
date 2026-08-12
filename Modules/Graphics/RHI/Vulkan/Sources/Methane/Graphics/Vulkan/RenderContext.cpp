@@ -43,6 +43,7 @@ Vulkan implementation of the render context interface.
 #include <magic_enum/magic_enum.hpp>
 #include <sstream>
 #include <ranges>
+#include <algorithm>
 #include <cassert>
 
 namespace Methane::Graphics::Vulkan
@@ -365,10 +366,15 @@ vk::Extent2D RenderContext::ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& s
     if (surface_caps.currentExtent.width != std::numeric_limits<uint32_t>::max())
         return surface_caps.currentExtent;
 
-    const FrameSize& frame_size = GetSettings().frame_size;
+    const FrameSize&    frame_size = GetSettings().frame_size;
+    const vk::Extent2D& min_extent = surface_caps.minImageExtent;
+    const vk::Extent2D& max_extent = surface_caps.maxImageExtent;
+
+    // Upper bounds are taken as max(min, max) to keep std::clamp well-defined
+    // in case of a driver reporting inconsistent surface capabilities.
     return vk::Extent2D(
-        std::max(surface_caps.minImageExtent.width,  std::min(surface_caps.minImageExtent.width,  frame_size.GetWidth())),
-        std::max(surface_caps.minImageExtent.height, std::min(surface_caps.minImageExtent.height, frame_size.GetHeight()))
+        std::clamp(frame_size.GetWidth(),  min_extent.width,  std::max(min_extent.width,  max_extent.width)),
+        std::clamp(frame_size.GetHeight(), min_extent.height, std::max(min_extent.height, max_extent.height))
     );
 }
 
