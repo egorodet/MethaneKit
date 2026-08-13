@@ -31,9 +31,9 @@
   sudo apt-get update && sudo apt-get install build-essential git cmake lcov xcb libx11-dev libx11-xcb-dev libxcb-sync-dev libxcb-randr0-dev
   ```
 - **MacOS**
-  - MacOS 13 "Ventura" or later
-  - XCode 14 or later with Command-Line Tools
-  - Download Metal Toolchain in XCode 26
+  - MacOS Sequoia 15.6 or later
+  - XCode 26 or later with Command-Line Tools
+  - Download Metal Toolchain
   ```bash
   xcodebuild -downloadComponent MetalToolchain
   ```
