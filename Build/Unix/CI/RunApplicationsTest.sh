@@ -99,6 +99,9 @@ WARNING_PATTERNS=(
 
 # Known harmless messages, which are excluded from error and warning matches.
 IGNORE_PATTERNS=(
+    # Informational message printed by Metal on startup when MTL_DEBUG_LAYER=1 is set
+    # (see setup_validation_environment), it is not a validation failure.
+    'Metal API Validation (Enabled|Disabled)'
     'loader_get_json'
     'terminator_CreateInstance'
     'Removing layer'
