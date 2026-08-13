@@ -67,6 +67,9 @@ jobs:
     name: ${{ matrix.name }}
 
     permissions:
+      # NOTE: declaring this block sets every omitted scope to "none",
+      #       so "contents: read" has to be listed explicitly for actions/checkout.
+      contents: read
       checks: write
       pull-requests: write
 
@@ -304,7 +307,7 @@ jobs:
         with:
           args: >
             --define sonar.projectKey=${{ matrix.sonar_project_key }}
-            --define sonar.projectVersion=${METHANE_VERSION_MAJOR}.${METHANE_VERSION_MINOR}.${METHANE_VERSION_PATCH}.${METHANE_VERSION_BUILD}
+            --define sonar.projectVersion=${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
             --define sonar.cfamily.compile-commands=Build/Output/${{ matrix.config_preset }}/Build/compile_commands.json
             --define sonar.testExecutionReportPaths=${{ env.test_results }}
             --define sonar.coverageReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/SonarQube.xml
@@ -319,7 +322,7 @@ jobs:
         with:
           args: >
             --define sonar.projectKey=${{ matrix.sonar_project_key }}
-            --define sonar.projectVersion=${METHANE_VERSION_MAJOR}.${METHANE_VERSION_MINOR}.${METHANE_VERSION_PATCH}.${METHANE_VERSION_BUILD}
+            --define sonar.projectVersion=${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
             --define sonar.cfamily.compile-commands=Build/Output/${{ matrix.config_preset }}/Build/compile_commands.json
             --define sonar.testExecutionReportPaths=${{ env.test_results }}
             --define sonar.coverageReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/SonarQube.xml

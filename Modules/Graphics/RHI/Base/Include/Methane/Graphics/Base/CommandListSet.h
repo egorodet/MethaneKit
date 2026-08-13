@@ -62,7 +62,7 @@ public:
     [[nodiscard]] const CommandList&       GetBaseCommandList(Data::Index index) const;
     [[nodiscard]] CommandQueue&            GetBaseCommandQueue()        { return m_base_refs.back().get().GetBaseCommandQueue(); }
     [[nodiscard]] const CommandQueue&      GetBaseCommandQueue() const  { return m_base_refs.back().get().GetBaseCommandQueue(); }
-    [[nodiscard]] const std::string&       GetCombinedName() const;
+    [[nodiscard]] std::string              GetCombinedName() const;
 
 protected:
     // IObjectCallback interface

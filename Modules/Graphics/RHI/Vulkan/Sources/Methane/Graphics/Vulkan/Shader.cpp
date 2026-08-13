@@ -65,7 +65,9 @@ static bool IsHlslReflectionExtension(const char* extension_name)
 static std::vector<uint32_t> RemoveHlslReflectionFromSpirv(const uint32_t* spirv_data_ptr, size_t spirv_words_count)
 {
     META_FUNCTION_TASK();
-    META_CHECK_GREATER_OR_EQUAL(spirv_words_count, g_spirv_header_words_count);
+    if (spirv_words_count < g_spirv_header_words_count)
+        throw InvalidArgumentException<size_t>(std::source_location::current(), "spirv_words_count",
+                                              spirv_words_count, "SPIRV byte code is shorter than its header");
 
     std::vector<uint32_t> stripped_spirv;
     stripped_spirv.reserve(spirv_words_count);
@@ -76,7 +78,9 @@ static std::vector<uint32_t> RemoveHlslReflectionFromSpirv(const uint32_t* spirv
         const uint32_t instruction    = spirv_data_ptr[word_index];
         const auto     op_code        = static_cast<spv::Op>(instruction & spv::OpCodeMask);
         const size_t   op_words_count = instruction >> spv::WordCountShift;
-        META_CHECK_GREATER_DESCR(op_words_count, 0U, "SPIRV instruction word count can not be zero");
+        if (op_words_count == 0U || op_words_count > spirv_words_count - word_index)
+            throw InvalidArgumentException<size_t>(std::source_location::current(), "op_words_count", op_words_count,
+                                                  "SPIRV instruction word count is zero or exceeds the byte code bounds");
 
         bool is_reflection_instruction = false;
         switch (op_code) // NOSONAR - do not add default case to switch

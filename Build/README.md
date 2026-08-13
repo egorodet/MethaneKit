@@ -33,7 +33,7 @@
 - **MacOS**
   - MacOS 13 "Ventura" or later
   - XCode 14 or later with Command-Line Tools
-  - Download Metal Toolchain
+  - Download Metal Toolchain in XCode 26
   ```bash
   xcodebuild -downloadComponent MetalToolchain
   ```

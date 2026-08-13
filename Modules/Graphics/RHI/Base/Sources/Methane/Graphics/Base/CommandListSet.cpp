@@ -102,9 +102,11 @@ const CommandList& CommandListSet::GetBaseCommandList(Data::Index index) const
     return m_base_refs[index].get();
 }
 
-const std::string& CommandListSet::GetCombinedName() const
+std::string CommandListSet::GetCombinedName() const
 {
     META_FUNCTION_TASK();
+    // Returned by value: a concurrent OnObjectNameChanged() may clear m_combined_name
+    // as soon as the mutex is released, so a reference to it could not be read safely.
     std::scoped_lock lock_guard(m_command_lists_mutex);
     if (!m_combined_name.empty())
         return m_combined_name;

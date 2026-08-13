@@ -63,6 +63,10 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        # No later step performs authenticated Git operations (SARIF is uploaded through the API),
+        # so the checkout token is not persisted into the local Git config.
+        persist-credentials: false
 
     - name: Install Linux prerequisites
       if: ${{ matrix.os == 'ubuntu-latest' }}

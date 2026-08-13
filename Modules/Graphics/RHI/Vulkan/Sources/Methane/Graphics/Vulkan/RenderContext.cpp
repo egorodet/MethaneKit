@@ -49,9 +49,10 @@ Vulkan implementation of the render context interface.
 namespace Methane::Graphics::Vulkan
 {
 
-// NOTE: must be 64-bit, because 5 seconds in nanoseconds does not fit in 32 bits
-//       and would silently wrap around to ~0.7 seconds.
-static constexpr uint64_t g_image_acquire_timeout_ns = 5ULL * 1000000000ULL;
+static constexpr uint64_t g_image_acquire_timeout_ns = 1000000000ULL; // 1 second
+
+// Maximum number of vkAcquireNextImageKHR retries on timeout or after a swapchain reset.
+static constexpr uint32_t g_max_image_acquire_attempts = 3U;
 
 #ifndef __APPLE__
 
@@ -130,7 +131,9 @@ void RenderContext::Initialize(Base::Device& device, bool is_callback_emitted)
 {
     META_FUNCTION_TASK();
     SetDevice(device);
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(GetVulkanDevice().GetNativeDevice());
+    // NOTE: VULKAN_HPP_DEFAULT_DISPATCHER is intentionally NOT specialized with this render context device,
+    //       see the detailed explanation in Device::Initialize(). The global dispatcher keeps the
+    //       instance-level loader trampolines, which dispatch correctly on multi-GPU systems.
     InitializeNativeSwapchain();
     Context<Base::RenderContext>::Initialize(device, is_callback_emitted);
 }
@@ -277,28 +280,48 @@ uint32_t RenderContext::GetNextFrameBufferIndex()
     }
 
     // Acquire next frame image with signalling GPU semaphore when image will be acquired
-    uint32_t   next_image_index = 0;
-    switch (const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(),
-                                                                                    g_image_acquire_timeout_ns,
-                                                                                    curr_frame_sync.vk_unique_semaphore.get(),
-                                                                                    {},
-                                                                                    &next_image_index);
-            image_acquire_result)
+    uint32_t next_image_index = 0;
+    for (uint32_t acquire_attempt = 0U;; ++acquire_attempt)
     {
-    using enum vk::Result;
-    case eSuccess:
-    case eSuboptimalKHR:
-        break;
+        const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(),
+                                                                               g_image_acquire_timeout_ns,
+                                                                               curr_frame_sync.vk_unique_semaphore.get(),
+                                                                               {},
+                                                                               &next_image_index);
+        bool retry_acquire = false;
+        switch (image_acquire_result)
+        {
+        using enum vk::Result;
+        case eSuccess:
+        case eSuboptimalKHR:
+            break;
 
-    case eErrorSurfaceLostKHR:
-        m_vk_unique_surface.release();
-        m_vk_unique_surface = Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), m_app_env);
-        ResetNativeSwapchain();
-        break;
+        case eErrorSurfaceLostKHR:
+            m_vk_unique_surface.release();
+            m_vk_unique_surface = Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), m_app_env);
+            ResetNativeSwapchain();
+            // Image was not acquired, and it has to be taken from the newly created swapchain.
+            retry_acquire = true;
+            break;
 
-            default:
-        throw InvalidArgumentException<vk::Result>(std::source_location::current(), "image_acquire_result",
-                                                   image_acquire_result, "failed to acquire next image");
+        case eTimeout:
+        case eNotReady:
+            // No presentable image became available in time. Vulkan guarantees that the semaphore is left
+            // untouched in this case (VUID-vkAcquireNextImageKHR-semaphore-01780), so it can be reused as is.
+            retry_acquire = true;
+            break;
+
+        default:
+            throw InvalidArgumentException<vk::Result>(std::source_location::current(), "image_acquire_result",
+                                                      image_acquire_result, "failed to acquire next image");
+        }
+
+        if (!retry_acquire)
+            break;
+
+        if (acquire_attempt >= g_max_image_acquire_attempts)
+            throw InvalidArgumentException<vk::Result>(std::source_location::current(), "image_acquire_result",
+                                                      image_acquire_result, "failed to acquire next image in several attempts");
     }
 
     const uint32_t next_frame_index = next_image_index % Base::RenderContext::GetSettings().frame_buffers_count;

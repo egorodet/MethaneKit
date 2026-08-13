@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Methane Kit is a cross-platform C++20 3D graphics abstraction library and application framework. It wraps DirectX 12, Vulkan and Metal behind one object-oriented API (RHI), with a single HLSL 6 shader codebase compiled to all backends at build time.
 
-CMake 3.24+ is required. External dependencies are **not** git submodules — they are fetched by [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) during CMake configure into `Build/Output/ExternalsCache/` (override with `-DCPM_SOURCE_CACHE=<path>`). The first configure is slow because of this.
+CMake 3.24+ is required; the `VS2026-*` presets additionally need **CMake 4.2+**, which is where the `Visual Studio 18 2026` generator they use was added. External dependencies are **not** git submodules — they are fetched by [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) during CMake configure into `Build/Output/ExternalsCache/` (override with `-DCPM_SOURCE_CACHE=<path>`). The first configure is slow because of this.
 
 ## Build & Test
 

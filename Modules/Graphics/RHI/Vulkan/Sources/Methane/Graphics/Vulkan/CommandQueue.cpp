@@ -273,7 +273,13 @@ void CommandQueue::AddWaitForFrameExecution(const Rhi::ICommandListSet& command_
 void CommandQueue::CompleteCommandListSetExecution(Base::CommandListSet& executing_command_list_set)
 {
     META_FUNCTION_TASK();
-    ResetWaitForFrameExecution(executing_command_list_set.GetFrameIndex().value_or(0U));
+    // Only frame-rendering command list sets register a frame wait (see AddWaitForFrameExecution),
+    // so a frame-less set must not reset the wait state of frame 0.
+    if (const Opt<Data::Index>& frame_index_opt = executing_command_list_set.GetFrameIndex();
+        frame_index_opt)
+    {
+        ResetWaitForFrameExecution(*frame_index_opt);
+    }
     Base::CommandQueueTracking::CompleteCommandListSetExecution(executing_command_list_set);
 }
 

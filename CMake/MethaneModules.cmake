@@ -26,11 +26,14 @@ function(get_target_arch OUT_ARCH)
         set(${OUT_ARCH} "" PARENT_SCOPE)
     elseif(ARMEABI_V7A)
         set(${OUT_ARCH} "arm" PARENT_SCOPE)
-    elseif(ARM64_V8A OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ARM64")
+    # NOTE: variables are compared by name (not by ${} expansion), so that an empty or
+    #       keyword-like value can not be mis-parsed by if(); MATCHES covers the common
+    #       Arm64 spellings reported by different toolchains (ARM64/arm64/AARCH64/aarch64).
+    elseif(ARM64_V8A OR CMAKE_SYSTEM_PROCESSOR MATCHES "^([Aa][Rr][Mm]64|[Aa][Aa][Rr][Cc][Hh]64)$")
         set(${OUT_ARCH} "arm64" PARENT_SCOPE)
-    elseif(${CMAKE_SIZEOF_VOID_P} STREQUAL "4")
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
         set(${OUT_ARCH} "x86" PARENT_SCOPE)
-    elseif(${CMAKE_SIZEOF_VOID_P} STREQUAL "8")
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
         set(${OUT_ARCH} "x64" PARENT_SCOPE)
     else()
         message(FATAL_ERROR "Unknown architecture")
