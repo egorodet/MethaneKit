@@ -188,7 +188,7 @@ void ComputeContext::Reset() const
 
 Device ComputeContext::GetDevice() const
 {
-    return Device(const_cast<IDevice&>(GetImpl(m_impl_ptr).GetDevice()));
+    return Device(GetImpl(m_impl_ptr).GetBaseDevice());
 }
 
 CommandKit ComputeContext::GetDefaultCommandKit(CommandListType type) const

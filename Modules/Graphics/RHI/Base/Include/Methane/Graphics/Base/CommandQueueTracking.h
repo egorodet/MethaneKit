@@ -128,7 +128,7 @@ private:
     TracyLockable(std::mutex,             m_execution_waiting_mutex);
     std::condition_variable_any           m_execution_waiting_condition_var;
     std::atomic<bool>                     m_execution_waiting{ true };
-    std::thread                           m_execution_waiting_thread;
+    std::jthread                          m_execution_waiting_thread;
     std::exception_ptr                    m_execution_waiting_exception_ptr;
     std::atomic<bool>                     m_name_changed{ true };
     mutable Ptr<Rhi::ITimestampQueryPool> m_timestamp_query_pool_ptr;

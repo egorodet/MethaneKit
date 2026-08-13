@@ -29,6 +29,7 @@ Console UI application base class implemented using FTXUI framework
 
 #include <fmt/format.h>
 #include <condition_variable>
+#include <stop_token>
 #include <thread>
 
 namespace Methane::Tutorials
@@ -37,12 +38,11 @@ namespace Methane::Tutorials
 int ConsoleApp::Run()
 {
     META_FUNCTION_TASK();
-    std::atomic refresh_ui_continue = true;
-    std::thread refresh_ui([this, &refresh_ui_continue]
+    std::jthread refresh_ui([this](const std::stop_token& stop_token)
     {
         uint32_t time = 0;
         std::condition_variable_any update_condition_var;
-        while (refresh_ui_continue)
+        while (!stop_token.stop_requested())
         {
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(m_30fps_screen_refresh_limit_enabled ? 32ms : 1ms);
@@ -54,8 +54,7 @@ int ConsoleApp::Run()
     });
 
     m_screen.Loop(m_root);
-    refresh_ui_continue = false;
-    refresh_ui.join();
+    refresh_ui.request_stop(); // std::jthread destructor joins the stopped thread
     return 0;
 }
 

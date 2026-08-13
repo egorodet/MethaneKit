@@ -172,12 +172,14 @@ Key KeyConverter::GetKeyByNativeCode(const NativeKey& native_key) noexcept
 
 Key KeyConverter::GetControlKey(const NativeKey& native_key)
 {
+    using enum Key;
+
     MSG  next {};
     LONG time = 0;
 
     // Right side keys have the extended key bit set
     if (native_key.l_param & 0x01000000)
-        return Key::Unknown;
+        return Unknown;
 
     // HACK: Alt Gr sends Left Ctrl and then Right Alt in close sequence
     //       We only want the Right Alt message, so if the next message is
@@ -185,13 +187,13 @@ Key KeyConverter::GetControlKey(const NativeKey& native_key)
     time = GetMessageTime();
 
     if (!PeekMessageW(&next, nullptr, 0, 0, PM_NOREMOVE))
-        return Key::LeftControl;
+        return LeftControl;
 
     if ((next.message == WM_KEYDOWN || next.message == WM_SYSKEYDOWN || next.message == WM_KEYUP || next.message == WM_SYSKEYUP) &&
         next.wParam == VK_MENU && (next.lParam & 0x01000000) && next.time == static_cast<DWORD>(time))
-        return Key::Unknown; // Next message is Right Alt down so discard this
+        return Unknown; // Next message is Right Alt down so discard this
 
-    return Key::LeftControl;
+    return LeftControl;
 }
 
 ModifierMask KeyConverter::GetModifiersByNativeCode(const NativeKey& native_key) noexcept

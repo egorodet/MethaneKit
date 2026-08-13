@@ -200,7 +200,7 @@ void RenderContext::Reset() const
 
 Device RenderContext::GetDevice() const
 {
-    return Device(const_cast<IDevice&>(GetImpl(m_impl_ptr).GetDevice()));
+    return Device(GetImpl(m_impl_ptr).GetBaseDevice());
 }
 
 CommandKit RenderContext::GetDefaultCommandKit(CommandListType type) const
