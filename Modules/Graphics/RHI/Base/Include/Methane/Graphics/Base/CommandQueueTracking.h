@@ -65,7 +65,7 @@ public:
     virtual void WaitUntilCompleted(const Opt<Data::Index>& frame_index = { }, uint32_t timeout_ms = 0U);
 
     Ptr<CommandListSet> GetLastExecutingCommandListSet() const;
-    const Ptr<Rhi::ITimestampQueryPool>& GetTimestampQueryPoolPtr() final;
+    Ptr<Rhi::ITimestampQueryPool> GetTimestampQueryPoolPtr() final;
 
 protected:
     using CommandListSetsQueue = std::queue<Ptr<CommandListSet>>;
@@ -98,6 +98,7 @@ protected:
 
 private:
     void InitializeTimestampQueryPool();
+    Ptr<Rhi::ITimestampQueryPool> GetInitializedTimestampQueryPoolPtr() const;
     void CompleteExecutionSafely();
     void WaitForExecution() noexcept;
     bool IsFrontListExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
@@ -132,6 +133,7 @@ private:
     std::exception_ptr                    m_execution_waiting_exception_ptr;
     std::atomic<bool>                     m_name_changed{ true };
     mutable Ptr<Rhi::ITimestampQueryPool> m_timestamp_query_pool_ptr;
+    mutable TracyLockable(std::mutex,     m_timestamp_query_pool_mutex);
 };
 
 } // namespace Methane::Graphics::Base

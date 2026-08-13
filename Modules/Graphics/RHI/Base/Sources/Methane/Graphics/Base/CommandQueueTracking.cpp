@@ -63,7 +63,7 @@ CommandQueueTracking::~CommandQueueTracking()
     ShutdownQueueExecution();
 }
 
-void CommandQueueTracking::InitializeTimestampQueryPool()
+void CommandQueueTracking::InitializeTimestampQueryPool() // NOSONAR - m_timestamp_query_pool_mutex is locked by the caller
 {
     META_FUNCTION_TASK();
     constexpr uint32_t g_max_timestamp_queries_count_per_frame = 1000;
@@ -163,9 +163,12 @@ void CommandQueueTracking::WaitForExecution() noexcept
                 CompleteCommandListSetExecution(*command_list_set_ptr);
             }
 
-            if (m_timestamp_query_pool_ptr)
+            // Keep a strong reference for the whole calibration, so that a concurrent
+            // CompleteExecutionSafely() resetting the queue's pointer can not destroy the pool under us.
+            if (const Ptr<Rhi::ITimestampQueryPool> timestamp_query_pool_ptr = GetInitializedTimestampQueryPoolPtr();
+                timestamp_query_pool_ptr)
             {
-                const Rhi::ITimestampQueryPool::CalibratedTimestamps calibrated_timestamps = m_timestamp_query_pool_ptr
+                const Rhi::ITimestampQueryPool::CalibratedTimestamps calibrated_timestamps = timestamp_query_pool_ptr
                     ->Calibrate();
                 GetTracyContext().Calibrate(calibrated_timestamps.cpu_ts, calibrated_timestamps.gpu_ts);
             }
@@ -212,12 +215,20 @@ Ptr<CommandListSet> CommandQueueTracking::GetLastExecutingCommandListSet() const
     return m_executing_command_lists.empty() ? Ptr<CommandListSet>() : m_executing_command_lists.back();
 }
 
-const Ptr<Rhi::ITimestampQueryPool>& CommandQueueTracking::GetTimestampQueryPoolPtr()
+Ptr<Rhi::ITimestampQueryPool> CommandQueueTracking::GetTimestampQueryPoolPtr()
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_timestamp_query_pool_mutex);
     if (!m_timestamp_query_pool_ptr)
         InitializeTimestampQueryPool();
 
+    return m_timestamp_query_pool_ptr;
+}
+
+Ptr<Rhi::ITimestampQueryPool> CommandQueueTracking::GetInitializedTimestampQueryPoolPtr() const
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_timestamp_query_pool_mutex);
     return m_timestamp_query_pool_ptr;
 }
 
@@ -267,7 +278,10 @@ void CommandQueueTracking::CompleteExecutionSafely()
 {
     META_FUNCTION_TASK();
     std::unique_lock lock(m_execution_waiting_mutex);
-    m_timestamp_query_pool_ptr.reset();
+    {
+        std::scoped_lock timestamp_query_pool_lock_guard(m_timestamp_query_pool_mutex);
+        m_timestamp_query_pool_ptr.reset();
+    }
 
     try
     {
