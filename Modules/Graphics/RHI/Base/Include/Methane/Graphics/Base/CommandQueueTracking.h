@@ -109,7 +109,7 @@ private:
     void ProcessExecutingCommandListSet(const Opt<Data::Index>& frame_index, const CommandListSetFuncType& process_func)
     {
         std::scoped_lock lock_guard(m_executing_command_lists_mutex);
-        if (frame_index && !IsExecutingOnFrameIndex(frame_index))
+        if (frame_index.has_value() && !IsExecutingOnFrameIndex(frame_index))
             return;
 
         while (!m_executing_command_lists.empty())
@@ -117,7 +117,7 @@ private:
             const bool is_frame_target = IsFrontListExecutingOnFrameIndex(frame_index);
             process_func(*m_executing_command_lists.front());
             m_executing_command_lists.pop();
-            if (frame_index && is_frame_target)
+            if (frame_index.has_value() && is_frame_target)
                 break;
         }
         m_execution_waiting_condition_var.notify_one();

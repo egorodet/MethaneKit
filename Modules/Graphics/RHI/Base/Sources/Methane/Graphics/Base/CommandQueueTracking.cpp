@@ -117,7 +117,7 @@ bool CommandQueueTracking::SetName(std::string_view name)
 void CommandQueueTracking::CompleteExecution(const Opt<Data::Index>& frame_index)
 {
     META_FUNCTION_TASK();
-    ProcessExecutingCommandListSet(frame_index, [](CommandListSet& command_list_set)
+    ProcessExecutingCommandListSet(frame_index, [](const CommandListSet& command_list_set)
     {
         command_list_set.Complete();
     });

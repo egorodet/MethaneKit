@@ -41,7 +41,7 @@ int ConsoleApp::Run()
     std::jthread refresh_ui([this](const std::stop_token& stop_token)
     {
         uint32_t time = 0;
-        std::condition_variable_any update_condition_var;
+        std::condition_variable update_condition_var;
         while (!stop_token.stop_requested())
         {
             using namespace std::chrono_literals;

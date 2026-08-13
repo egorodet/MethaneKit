@@ -63,7 +63,7 @@ public:
     void SetParameters(const Parameters& parameters);
 
     inline void ResetOrientation() noexcept                                 { m_current_orientation = m_default_orientation; m_is_current_view_matrix_dirty = true; }
-    inline void ResetOrientation(const Orientation& orientation) noexcept   { m_current_orientation = m_default_orientation = orientation; m_is_current_view_matrix_dirty = true; }
+    inline void ResetOrientation(const Orientation& orientation) noexcept   { m_default_orientation = orientation; m_current_orientation = orientation; m_is_current_view_matrix_dirty = true; }
     inline void SetOrientation(const Orientation& orientation) noexcept     { m_current_orientation = orientation; m_is_current_view_matrix_dirty = true; }
     inline void SetOrientationEye(const hlslpp::float3& eye) noexcept       { m_current_orientation.eye = eye; m_is_current_view_matrix_dirty = true; }
     inline void SetOrientationAim(const hlslpp::float3& aim) noexcept       { m_current_orientation.aim = aim; m_is_current_view_matrix_dirty = true; }

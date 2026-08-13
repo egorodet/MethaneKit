@@ -105,6 +105,7 @@ const CommandList& CommandListSet::GetBaseCommandList(Data::Index index) const
 const std::string& CommandListSet::GetCombinedName() const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_command_lists_mutex);
     if (!m_combined_name.empty())
         return m_combined_name;
 
@@ -131,6 +132,7 @@ const std::string& CommandListSet::GetCombinedName() const
 void CommandListSet::OnObjectNameChanged(Rhi::IObject&, const std::string&)
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_command_lists_mutex);
     m_combined_name.clear();
 }
 
