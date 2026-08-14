@@ -39,6 +39,7 @@ Vulkan implementation of the system interface.
 #include <ranges>
 #include <cassert>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 //#define VULKAN_VALIDATION_BEST_PRACTICES_ENABLED
@@ -67,19 +68,21 @@ static const std::string g_vk_validation_layer        = "VK_LAYER_KHRONOS_valida
 static const std::string g_vk_debug_utils_extension   = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 static const std::string g_vk_validation_extension    = VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME;
 
-static std::vector<char const*> GetEnabledLayers(const std::vector<std::string_view>& layers)
+// Layer and extension names are returned as owned strings, because Vulkan requires null-terminated C-strings,
+// while the input string views are not guaranteed to be null-terminated.
+static std::vector<std::string> GetEnabledLayers(const std::vector<std::string_view>& layers)
 {
     META_FUNCTION_TASK();
     const std::vector<vk::LayerProperties> layer_properties = vk::enumerateInstanceLayerProperties();
 
-    std::vector<const char*> enabled_layers;
+    std::vector<std::string> enabled_layers;
     enabled_layers.reserve(layers.size() );
     for (const std::string_view& layer : layers)
     {
         assert(std::ranges::find_if(layer_properties,
                             [layer](const vk::LayerProperties& lp) { return layer == lp.layerName; }
                             ) != layer_properties.end() );
-        enabled_layers.push_back(layer.data() );
+        enabled_layers.emplace_back(layer);
     }
 
 #ifndef NDEBUG
@@ -88,19 +91,19 @@ static std::vector<char const*> GetEnabledLayers(const std::vector<std::string_v
                      [](const vk::LayerProperties& lp) { return g_vk_validation_layer == lp.layerName; }
                      ) != layer_properties.end())
     {
-        enabled_layers.push_back(g_vk_validation_layer.c_str());
+        enabled_layers.push_back(g_vk_validation_layer);
     }
 #endif
 
     return enabled_layers;
 }
 
-static std::vector<const char*> GetEnabledExtensions(const std::vector<std::string_view>& extensions)
+static std::vector<std::string> GetEnabledExtensions(const std::vector<std::string_view>& extensions)
 {
     META_FUNCTION_TASK();
 
     const std::vector<vk::ExtensionProperties>& extension_properties = vk::enumerateInstanceExtensionProperties();
-    std::vector<const char*> enabled_extensions;
+    std::vector<std::string> enabled_extensions;
     enabled_extensions.reserve(extensions.size());
 
     for (const std::string_view& ext : extensions)
@@ -108,17 +111,17 @@ static std::vector<const char*> GetEnabledExtensions(const std::vector<std::stri
         assert(std::ranges::find_if(extension_properties,
                             [ext](const vk::ExtensionProperties& ep) { return ext == ep.extensionName; }
                             ) != extension_properties.end());
-        enabled_extensions.push_back(ext.data() );
+        enabled_extensions.emplace_back(ext);
     }
 
     const auto add_enabled_extension = [&extensions, &enabled_extensions, &extension_properties](const std::string& extension)
     {
-        if (std::ranges::find(extensions.begin(), extensions.end(), extension) == extensions.end() &&
+        if (std::ranges::find(extensions, extension) == extensions.end() &&
             std::ranges::find_if(extension_properties,
                          [&extension](const vk::ExtensionProperties& ep) { return extension == ep.extensionName; }
             ) != extension_properties.end())
         {
-            enabled_extensions.push_back(extension.c_str());
+            enabled_extensions.push_back(extension);
         }
     };
 
@@ -129,6 +132,19 @@ static std::vector<const char*> GetEnabledExtensions(const std::vector<std::stri
 #endif
 
     return enabled_extensions;
+}
+
+// Returned pointers stay valid only while the passed strings vector is alive and unmodified.
+static std::vector<const char*> GetCStrings(const std::vector<std::string>& strings)
+{
+    META_FUNCTION_TASK();
+    std::vector<const char*> c_strings;
+    c_strings.reserve(strings.size());
+    for (const std::string& str : strings)
+    {
+        c_strings.push_back(str.c_str());
+    }
+    return c_strings;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT      message_severity,
@@ -255,8 +271,11 @@ static vk::UniqueInstance CreateVulkanInstance(const VkDynamicLoader& vk_loader,
         vk_instance_create_flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
 
     constexpr uint32_t engine_version = METHANE_VERSION_MAJOR * 10 + METHANE_VERSION_MINOR;
-    const std::vector<const char*> enabled_layers     = GetEnabledLayers(layers);
-    const std::vector<const char*> enabled_extensions = GetEnabledExtensions(extensions);
+    // Name strings must outlive the instance create info, which keeps only the C-string pointers taken from them
+    const std::vector<std::string> enabled_layer_names     = GetEnabledLayers(layers);
+    const std::vector<std::string> enabled_extension_names = GetEnabledExtensions(extensions);
+    const std::vector<const char*> enabled_layers          = GetCStrings(enabled_layer_names);
+    const std::vector<const char*> enabled_extensions      = GetCStrings(enabled_extension_names);
     const vk::ApplicationInfo vk_app_info(g_vk_app_name.c_str(), 1, g_vk_engine_name.c_str(), engine_version, vk_api_version);
     const vk::InstanceCreateInfo vk_instance_create_info = MakeInstanceCreateInfoChain(vk_app_info, vk_instance_create_flags,
                                                                                        enabled_layers, enabled_extensions).get<vk::InstanceCreateInfo>();
