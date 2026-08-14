@@ -39,6 +39,8 @@ Vulkan implementation of the command queue interface.
 
 #include <fmt/format.h>
 
+#include <algorithm>
+
 namespace Methane::Graphics::Vulkan
 {
 
@@ -262,24 +264,38 @@ void CommandQueue::AddWaitForFrameExecution(const Rhi::ICommandListSet& command_
     const auto& vulkan_command_list_set = static_cast<const CommandListSet&>(command_list_set);
     const Data::Index wait_info_index = command_list_set.GetFrameIndex().value();
 
+    const vk::Semaphore vk_execution_completed_semaphore = vulkan_command_list_set.GetNativeExecutionCompletedSemaphore();
+
     std::scoped_lock lock_guard(m_wait_frame_execution_completed_mutex);
 
-    m_wait_frame_execution_completed.resize(wait_info_index + 1U);
+    // Grow only: waits of other frames may still be pending until their presentation consumes them,
+    // so the wait infos vector must never shrink when a lower frame index is executed.
+    if (wait_info_index >= m_wait_frame_execution_completed.size())
+        m_wait_frame_execution_completed.resize(wait_info_index + 1U);
+
     WaitInfo& frame_wait_info = m_wait_frame_execution_completed[wait_info_index];
-    frame_wait_info.semaphores.emplace_back(vulkan_command_list_set.GetNativeExecutionCompletedSemaphore());
+
+    // A binary semaphore may be awaited only once per signal operation, so the same command list set
+    // must not be registered twice for one frame presentation, which can happen if the previous
+    // presentation of this frame was skipped because of a swapchain error.
+    if (std::ranges::find(frame_wait_info.semaphores, vk_execution_completed_semaphore) != frame_wait_info.semaphores.end())
+        return;
+
+    frame_wait_info.semaphores.emplace_back(vk_execution_completed_semaphore);
     frame_wait_info.stages.emplace_back(vk::PipelineStageFlagBits::eBottomOfPipe);
 }
 
 void CommandQueue::CompleteCommandListSetExecution(Base::CommandListSet& executing_command_list_set)
 {
     META_FUNCTION_TASK();
-    // Only frame-rendering command list sets register a frame wait (see AddWaitForFrameExecution),
-    // so a frame-less set must not reset the wait state of frame 0.
-    if (const Opt<Data::Index>& frame_index_opt = executing_command_list_set.GetFrameIndex();
-        frame_index_opt)
-    {
-        ResetWaitForFrameExecution(*frame_index_opt);
-    }
+    // NOTE: the pending frame wait registered by AddWaitForFrameExecution() is intentionally NOT reset here.
+    // This method is called from the background execution-waiting thread as soon as the command list set
+    // execution fence is signalled, but the execution completed binary semaphore is consumed by the frame
+    // presentation on the main thread (see RenderContext::Present()), which happens independently of that fence.
+    // Resetting the wait here used to drop the semaphore from the presentation wait list whenever the GPU
+    // finished before the main thread reached Present(), leaving the binary semaphore signalled with nothing
+    // ever waiting on it, which the validation layer reports as VUID-vkQueueSubmit-pSignalSemaphores-00067
+    // on the next execution of the same command list set. The wait is reset by Present() once it is consumed.
     Base::CommandQueueTracking::CompleteCommandListSetExecution(executing_command_list_set);
 }
 
