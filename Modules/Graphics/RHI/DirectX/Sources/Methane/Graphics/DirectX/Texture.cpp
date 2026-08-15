@@ -514,7 +514,10 @@ void Texture::InitializeAsImage()
 
     const SubResource::Count& sub_resource_count = GetSubresourceCount();
     const CD3DX12_RESOURCE_DESC resource_desc = CreateNativeResourceDesc(settings, sub_resource_count);
-    InitializeCommittedResource(resource_desc, D3D12_HEAP_TYPE_DEFAULT, Rhi::ResourceState::CopyDest);
+
+    // Image texture is created in Common state, which is implicitly promoted to CopyDest state
+    // by the copy queue during data upload and is explicitly transitioned to ShaderResource state before use in shaders.
+    InitializeCommittedResource(resource_desc, D3D12_HEAP_TYPE_DEFAULT, Rhi::ResourceState::Common);
 
     const UINT64 texture_buffer_size = GetRequiredIntermediateSize(GetNativeResource(), 0, GetSubresourceCount().GetRawCount());
     m_upload_resource_cptr = CreateCommittedResource(CD3DX12_RESOURCE_DESC::Buffer(texture_buffer_size), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
