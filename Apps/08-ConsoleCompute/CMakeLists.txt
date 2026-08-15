@@ -6,6 +6,7 @@ endif()
 set(TARGET MethaneConsoleCompute)
 
 include(MethaneShaders)
+include(MethaneModules)
 
 add_executable(${TARGET}
     ConsoleApp.h
@@ -43,25 +44,5 @@ install(
     COMPONENT Runtime
 )
 
-# PREREQUISITE_RESOURCES contains compiled Metal shaders library, which should be copied next to executable
-get_target_property(COPY_RESOURCES ${TARGET} PREREQUISITE_RESOURCES)
-if (COPY_RESOURCES AND NOT COPY_RESOURCES STREQUAL "COPY_RESOURCES-NOTFOUND")
-
-    if(METHANE_GFX_API EQUAL METHANE_GFX_METAL)
-        get_target_property(SHADER_TARGET ${TARGET} METAL_LIB_TARGET)
-    else()
-        set(SHADER_TARGETS ${TARGET})
-    endif()
-
-    add_custom_command(TARGET ${SHADER_TARGET} POST_BUILD
-        COMMENT "Copying prerequisite resources for application ${TARGET}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${COPY_RESOURCES} "$<TARGET_FILE_DIR:${TARGET}>"
-    )
-
-    install(
-        FILES ${COPY_RESOURCES}
-        DESTINATION Apps
-        COMPONENT Runtime
-    )
-
-endif()
+get_target_property(METHANE_PREREQUISITE_MODULES MethaneKit PREREQUISITE_MODULES)
+add_prerequisite_binaries(${TARGET} "${METHANE_PREREQUISITE_MODULES}" "$<TARGET_FILE_DIR:${TARGET}>")
