@@ -531,7 +531,7 @@ void AppLin::OnPropertyChanged(const xcb_property_notify_event_t& prop_event)
         return;
 
     const std::optional<xcb_atom_t> state_value_opt = Linux::GetXcbWindowPropertyValue<xcb_atom_t>(m_env.connection, m_env.window, m_state_atom);
-    if (!state_value_opt)
+    if (!state_value_opt.has_value())
         return;
 
     if (state_value_opt == m_state_hidden_atom)

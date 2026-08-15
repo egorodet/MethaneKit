@@ -204,6 +204,7 @@ void CommandQueue::WaitForSemaphore(const vk::Semaphore& semaphore, vk::Pipeline
     }
 }
 
+#if 0 // Not used now, but may be needed in future
 const CommandQueue::WaitInfo& CommandQueue::GetWaitForExecutionCompleted() const
 {
     META_FUNCTION_TASK();
@@ -225,6 +226,7 @@ const CommandQueue::WaitInfo& CommandQueue::GetWaitForExecutionCompleted() const
                                              vk::PipelineStageFlagBits::eBottomOfPipe);
     return m_wait_execution_completed;
 }
+#endif
 
 const CommandQueue::WaitInfo& CommandQueue::GetWaitForFrameExecutionCompleted(Data::Index frame_index) const
 {

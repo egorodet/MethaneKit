@@ -38,12 +38,12 @@ static std::atomic<bool>& GetPrintToConsoleEnabledFlag() noexcept
 void SetPrintToConsoleEnabled(bool print_to_console_enabled) noexcept
 {
     META_FUNCTION_TASK();
-    GetPrintToConsoleEnabledFlag().store(print_to_console_enabled, std::memory_order_relaxed);
+    GetPrintToConsoleEnabledFlag().store(print_to_console_enabled);
 }
 
 bool IsPrintToConsoleEnabled() noexcept
 {
-    return GetPrintToConsoleEnabledFlag().load(std::memory_order_relaxed);
+    return GetPrintToConsoleEnabledFlag().load();
 }
 
 inline void SplitInChunks(const std::string_view str, size_t max_chunk_size, std::vector<std::string_view>& output)

@@ -149,6 +149,11 @@ const ResourceBarriers::NativePipelineBarrier& ResourceBarriers::GetNativePipeli
     META_FUNCTION_TASK();
     const uint32_t cmd_queue_family_index = target_cmd_queue.GetFamilyIndex();
 
+    // The per-queue-family barrier cache is filled lazily from a const method, so it is guarded with the barriers mutex.
+    // The mutex is recursive, which makes locking it here safe even though the callers are holding it already
+    // (see CommandList::SetResourceBarriers), and the returned reference stays valid while the caller holds the lock.
+    const auto lock_guard = Lock();
+
     const auto [barrier_it, is_added] = m_vk_barrier_by_queue_family.try_emplace(cmd_queue_family_index, m_vk_default_barrier);
     NativePipelineBarrier& native_pipeline_barrier = barrier_it->second;
     if (!is_added)

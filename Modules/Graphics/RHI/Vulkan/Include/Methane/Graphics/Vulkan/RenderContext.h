@@ -30,6 +30,7 @@ Vulkan implementation of the render context interface.
 #include <Methane/Data/Emitter.hpp>
 
 #include <deque>
+#include <mutex>
 #include <vulkan/vulkan.hpp>
 
 #ifdef __APPLE__
@@ -91,7 +92,11 @@ public:
     const vk::Semaphore&    GetNativeFrameImageAvailableSemaphore(uint32_t frame_buffer_index) const;
     const vk::Semaphore&    GetNativeFrameImageAvailableSemaphore(Opt<uint32_t> frame_buffer_index_opt) const;
 
-    void DeferredRelease(vk::UniquePipeline&& pipeline) const { m_vk_deferred_release_pipelines.emplace_back(std::move(pipeline)); }
+    void DeferredRelease(vk::UniquePipeline&& pipeline) const
+    {
+        std::scoped_lock lock_guard(m_vk_deferred_release_pipelines_mutex);
+        m_vk_deferred_release_pipelines.emplace_back(std::move(pipeline));
+    }
 
 protected:
     // Base::RenderContext overrides
@@ -131,7 +136,11 @@ private:
     std::vector<vk::Image>                  m_vk_frame_images;
     std::vector<FrameSync>                  m_frame_sync_pool;
     std::vector<vk::Semaphore>              m_vk_frame_image_available_semaphores;
+
+    // Pipelines are deferred for release from the render states, which may be recreated from any thread,
+    // while the deferred release queue is cleared in WaitForGpu(), so it is guarded with the mutex.
     mutable std::deque<vk::UniquePipeline>  m_vk_deferred_release_pipelines;
+    mutable TracyLockable(std::mutex,       m_vk_deferred_release_pipelines_mutex);
 };
 
 } // namespace Methane::Graphics::Vulkan

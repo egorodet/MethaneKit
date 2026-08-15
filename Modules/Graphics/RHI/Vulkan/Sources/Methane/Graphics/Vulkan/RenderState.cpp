@@ -376,10 +376,14 @@ vk::UniquePipeline RenderState::CreateNativePipeline(const ViewState* view_state
     // to enable primitive restart without the VK_EXT_primitive_topology_list_restart extension.
     // Note that the triangle strip belongs to the same topology class as the triangle list,
     // which is required for the dynamic topology changes.
-    const vk::PrimitiveTopology vk_primitive_topology =
-        render_primitive_opt           ? GetVulkanPrimitiveTopology(*render_primitive_opt) :
-        is_primitive_restart_enabled   ? vk::PrimitiveTopology::eTriangleStrip
-                                       : vk::PrimitiveTopology::eTriangleList;
+    const vk::PrimitiveTopology vk_primitive_topology = [&render_primitive_opt, is_primitive_restart_enabled]
+    {
+        if (render_primitive_opt.has_value())
+            return GetVulkanPrimitiveTopology(*render_primitive_opt);
+
+        return is_primitive_restart_enabled ? vk::PrimitiveTopology::eTriangleStrip
+                                            : vk::PrimitiveTopology::eTriangleList;
+    }();
 
     vk::PipelineInputAssemblyStateCreateInfo assembly_info(
         vk::PipelineInputAssemblyStateCreateFlags{},

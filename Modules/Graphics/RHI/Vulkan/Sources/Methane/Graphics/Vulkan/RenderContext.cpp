@@ -156,6 +156,7 @@ void RenderContext::WaitForGpu(WaitFor wait_for)
 
     GetVulkanDefaultCommandQueue(cl_type).WaitUntilCompleted(frame_buffer_index);
 
+    std::scoped_lock lock_guard(m_vk_deferred_release_pipelines_mutex);
     m_vk_deferred_release_pipelines.clear();
 }
 
@@ -274,7 +275,7 @@ uint32_t RenderContext::GetNextFrameBufferIndex()
     // acquireNextImageKHR must not have any pending signal or wait operations, so we have to wait
     // until the GPU has actually finished that submission (not just until it was acquired) before
     // it can be safely signalled again here (VUID-vkAcquireNextImageKHR-semaphore-01779).
-    if (curr_frame_sync.consumer_frame_index)
+    if (curr_frame_sync.consumer_frame_index.has_value())
     {
         GetVulkanDefaultCommandQueue(Rhi::CommandListType::Render).WaitUntilCompleted(curr_frame_sync.consumer_frame_index);
     }

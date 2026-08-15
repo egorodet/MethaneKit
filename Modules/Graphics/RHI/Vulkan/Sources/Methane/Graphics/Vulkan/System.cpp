@@ -202,7 +202,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(vk::DebugUtilsMessage
         for (uint32_t i = 0; i < callback_data_ptr->objectCount; i++)
         {
             ss << "\t\t- Object " << i << ":" << std::endl;
-            ss << "\t\t\t- objectType:   " << vk::to_string( static_cast<vk::ObjectType>(callback_data_ptr->pObjects[i].objectType)) << std::endl;
+            ss << "\t\t\t- objectType:   " << vk::to_string(callback_data_ptr->pObjects[i].objectType) << std::endl;
             ss << "\t\t\t- objectHandle: " << callback_data_ptr->pObjects[i].objectHandle << std::endl;
             if (callback_data_ptr->pObjects[i].pObjectName)
                 ss << "\t\t\t- objectName:   " << callback_data_ptr->pObjects[i].pObjectName << std::endl;

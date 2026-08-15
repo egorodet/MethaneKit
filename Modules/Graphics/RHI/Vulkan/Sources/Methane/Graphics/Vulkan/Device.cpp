@@ -175,9 +175,17 @@ vk::DeviceQueueCreateInfo QueueFamilyReservation::MakeDeviceQueueCreateInfo() co
     return vk::DeviceQueueCreateInfo(vk::DeviceQueueCreateFlags(), m_family_index, m_queues_count, m_priorities.data());
 }
 
+bool QueueFamilyReservation::HasFreeQueues() const
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_free_indices_mutex);
+    return !m_free_indices.IsEmpty();
+}
+
 uint32_t QueueFamilyReservation::ClaimQueueIndex() const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_free_indices_mutex);
     if (m_free_indices.IsEmpty())
         throw EmptyArgumentException<Data::RangeSet<uint32_t>>(std::source_location::current(), "m_free_indices",
                                                                "device queue family has no free queues in reservation");
@@ -191,15 +199,17 @@ void QueueFamilyReservation::ReleaseQueueIndex(uint32_t queue_index) const
 {
     META_FUNCTION_TASK();
     META_CHECK_LESS(queue_index, m_queues_count);
+    std::scoped_lock lock_guard(m_free_indices_mutex);
     m_free_indices.Add({ queue_index, queue_index + 1});
 }
 
-void QueueFamilyReservation::IncrementQueuesCount(uint32_t extra_queues_count) noexcept
+void QueueFamilyReservation::IncrementQueuesCount(uint32_t extra_queues_count)
 {
     META_FUNCTION_TASK();
     if (!extra_queues_count)
         return;
 
+    std::scoped_lock lock_guard(m_free_indices_mutex);
     m_free_indices.Add({m_queues_count, m_queues_count + extra_queues_count});
     m_queues_count += extra_queues_count;
     m_priorities.resize(m_queues_count, 0.F);
@@ -399,7 +409,7 @@ void Device::ReserveQueueFamily(Rhi::CommandListType cmd_list_type, uint32_t que
     const vk::QueueFlags queue_flags = GetQueueFlagsByType(cmd_list_type);
     const std::optional<uint32_t> vk_queue_family_index = FindQueueFamily(m_vk_queue_family_properties, queue_flags, queues_count,
                                                                           reserved_queues_count_per_family, m_vk_physical_device, vk_surface);
-    if (!vk_queue_family_index)
+    if (!vk_queue_family_index.has_value())
         throw IncompatibleException(fmt::format("Device does not support the required queue type {} and count {}",
                                                 magic_enum::enum_name(cmd_list_type), queues_count));
 

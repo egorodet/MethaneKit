@@ -350,8 +350,8 @@ const vk::ShaderModule& Shader::GetNativeModule() const
     if (m_vk_unique_module)
         return m_vk_unique_module.get();
 
-    const Device& device = m_vk_context.GetVulkanDevice();
-    if (device.IsExtensionSupported(VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME) &&
+    if (const Device& device = m_vk_context.GetVulkanDevice();
+        device.IsExtensionSupported(VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME) &&
         device.IsExtensionSupported(VK_GOOGLE_USER_TYPE_EXTENSION_NAME))
     {
         m_vk_unique_module = device.GetNativeDevice().createShaderModuleUnique(
