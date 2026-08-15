@@ -45,4 +45,4 @@ install(
 )
 
 get_target_property(METHANE_PREREQUISITE_MODULES MethaneKit PREREQUISITE_MODULES)
-add_prerequisite_binaries(${TARGET} "${METHANE_PREREQUISITE_MODULES}" "$<TARGET_FILE_DIR:${TARGET}>")
+add_prerequisite_binaries(${TARGET} "${METHANE_PREREQUISITE_MODULES}" "$<TARGET_FILE_DIR:${TARGET}>" TRUE)
