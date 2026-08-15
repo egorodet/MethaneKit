@@ -64,6 +64,9 @@ private:
     const D3D_FEATURE_LEVEL           m_feature_level;
     mutable NativeFeatureOptions5     m_feature_options_5;
     mutable wrl::ComPtr<ID3D12Device> m_device_cptr;
+#ifdef _DEBUG
+    mutable DWORD                     m_debug_message_callback_cookie = 0U;
+#endif
 };
 
 bool IsSoftwareAdapterDxgi(IDXGIAdapter1& adapter);

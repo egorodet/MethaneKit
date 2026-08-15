@@ -44,6 +44,11 @@ Methane platform utility functions
 namespace Methane::Platform
 {
 
+// Enables printing of debug messages to the console output (std::cout) instead of the platform debug output,
+// which is not visible without debugger attached on Windows (OutputDebugString) and is written to the system log on MacOS (NSLog).
+void SetPrintToConsoleEnabled(bool print_to_console_enabled) noexcept;
+bool IsPrintToConsoleEnabled() noexcept;
+
 void PrintToDebugOutput(std::string_view msg);
 std::string GetExecutableDir();
 std::string GetExecutableFileName();

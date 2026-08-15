@@ -14,12 +14,13 @@
 # and their bundled executables are launched directly to capture their console output.
 #
 # Note on debug output:
-#   Vulkan and Metal validation messages are printed by Methane to the platform debug output,
-#   which is the process stdout on Linux and NSLog (stderr) on MacOS, so it is captured here.
-#   On Windows (Git Bash / MSYS) debug output goes to OutputDebugString and is NOT captured
-#   without a debugger attached: the Khronos validation layer is redirected to stdout with
-#   VK_KHRONOS_VALIDATION_* environment variables (see --no-gfx-validation-env), but DirectX
-#   debug layer messages remain invisible to this script.
+#   Graphics API validation messages (DirectX 12, Vulkan and Metal) are printed by Methane to the
+#   platform debug output, which is not visible in console on Windows (OutputDebugString) and is
+#   written to the system log on MacOS (NSLog). Applications are run with the command line option
+#   "--print_debug_messages_to_console", which redirects these messages to the console output,
+#   so that they are captured in the application log (see --no-debug-messages-to-console to disable).
+#   The Khronos validation layer is additionally redirected to stdout with VK_KHRONOS_VALIDATION_*
+#   environment variables (see --no-gfx-validation-env).
 
 set -o pipefail
 
@@ -43,6 +44,10 @@ VERBOSE=false
 USE_COLOR=auto
 USE_XVFB=auto
 SET_GFX_VALIDATION_ENV=true
+PRINT_DEBUG_MESSAGES_TO_CONSOLE=true
+
+# Methane application option enabling print of graphics API validation messages to console output
+PRINT_DEBUG_MESSAGES_OPTION="--print_debug_messages_to_console"
 
 APP_ARGS=()
 INCLUDE_PATTERNS=()
@@ -54,10 +59,11 @@ EXTRA_IGNORE_PATTERNS=()
 # Error patterns matched (as extended regular expressions) in the application output.
 # NOTE: patterns are matched by awk, so POSIX ERE syntax is used without GNU extensions.
 ERROR_PATTERNS=(
-    '^Error [A-Za-z]'                 # Methane Vulkan debug-utils messenger block of Error severity
+    '^Error [A-Za-z]'                 # Methane Vulkan debug-utils messenger and DirectX 12 debug message callback
+    '^Corruption [A-Za-z]'            # Methane DirectX 12 debug message callback of Corruption severity
     'Validation Error'                # Khronos validation layer direct output
     'VALIDATION.*ERROR'
-    'D3D12 ERROR'                     # DirectX 12 debug layer
+    'D3D12 ERROR'                     # DirectX 12 debug layer printed by debugger or debug output monitor
     'D3D12 CORRUPTION'
     'DXGI ERROR'
     'DXGI CORRUPTION'
@@ -90,7 +96,7 @@ ERROR_PATTERNS=(
 
 # Warning patterns are only reported, unless --fail-on-warnings is used.
 WARNING_PATTERNS=(
-    '^Warning [A-Za-z]'               # Methane Vulkan debug-utils messenger block of Warning severity
+    '^Warning [A-Za-z]'               # Methane Vulkan debug-utils messenger and DirectX 12 debug message callback
     'D3D12 WARNING'
     'DXGI WARNING'
     'Performance Warning'
@@ -98,6 +104,8 @@ WARNING_PATTERNS=(
 )
 
 # Known harmless messages, which are excluded from error and warning matches.
+# Patterns are matched against the whole multi-line message block, not only against its first line,
+# because message severity is printed in the first line of the block and message text goes below it.
 IGNORE_PATTERNS=(
     # Informational message printed by Metal on startup when MTL_DEBUG_LAYER=1 is set
     # (see setup_validation_environment), it is not a validation failure.
@@ -109,7 +117,17 @@ IGNORE_PATTERNS=(
     'lavapipe is not a conformant'
     'MESA-INTEL'
     'libGL error'
+    # DirectX 12 live-object report, which is printed by the debug layer on process termination,
+    # because applications are killed by this script without graceful shutdown of the graphics context.
+    'Process is terminating[.] Using simple reporting'
+    'Live Producer at'
+    'Live Object at'
+    'Live Device at'
+    'Live +[A-Za-z]+ +:'
 )
+
+# Maximum number of lines in a multi-line message block used for ignore patterns matching
+MESSAGE_BLOCK_LINES=32
 
 # ---------------------------------------------------------------------------
 # Output helpers
@@ -166,6 +184,8 @@ Options:
       --allow-early-exit    Do not fail when application exits before the timeout with code 0
       --xvfb / --no-xvfb    Force or disable running under Xvfb virtual display on Linux
                             (auto by default: used when DISPLAY is not set and Xvfb exists)
+      --no-debug-messages-to-console  Do not pass $PRINT_DEBUG_MESSAGES_OPTION
+                            to applications (use it with older builds not supporting this option)
       --no-gfx-validation-env  Do not set VK_KHRONOS_VALIDATION_* / MTL_DEBUG_LAYER variables
       --context LINES       Number of output lines printed after each match (default: $REPORTED_CONTEXT_LINES)
       --max-matches COUNT   Maximum number of matches printed per application (default: $MAX_REPORTED_MATCHES)
@@ -211,6 +231,7 @@ parse_command_line() {
             --allow-early-exit)    ALLOW_EARLY_EXIT=true ;;
             --xvfb)                USE_XVFB=always ;;
             --no-xvfb)             USE_XVFB=never ;;
+            --no-debug-messages-to-console) PRINT_DEBUG_MESSAGES_TO_CONSOLE=false ;;
             --no-gfx-validation-env) SET_GFX_VALIDATION_ENV=false ;;
             --context)             REPORTED_CONTEXT_LINES="$2"; shift ;;
             --max-matches)         MAX_REPORTED_MATCHES="$2"; shift ;;
@@ -545,23 +566,54 @@ build_match_regexps() {
     IGNORE_REGEX=$(join_patterns "${IGNORE_PATTERNS[@]}" ${EXTRA_IGNORE_PATTERNS[@]+"${EXTRA_IGNORE_PATTERNS[@]}"})
 }
 
+# Multi-line message block of the matched line is used for ignore patterns matching:
+# debug messages are printed as a block of lines starting with severity and ending with an empty line.
+AWK_MATCH_BLOCK_FUNCTIONS='
+    function GetMessageBlock(first_index,   block, i) {
+        block = lines[first_index]
+        for (i = first_index + 1; i <= NR && i < first_index + max_block_lines; i++) {
+            if (lines[i] == "")
+                break
+            block = block " " lines[i]
+        }
+        return block
+    }
+    function IsMatchedLine(line_index) {
+        if (lines[line_index] !~ re)
+            return 0
+        if (ign != "" && GetMessageBlock(line_index) ~ ign)
+            return 0
+        return 1
+    }
+'
+
 count_log_matches() { # $1 - log file, $2 - match regex
-    LC_ALL=C awk -v re="$2" -v ign="$IGNORE_REGEX" '
-        $0 ~ re && (ign == "" || $0 !~ ign) { matches_count++ }
-        END { print matches_count + 0 }
+    LC_ALL=C awk -v re="$2" -v ign="$IGNORE_REGEX" -v max_block_lines="$MESSAGE_BLOCK_LINES" \
+        "$AWK_MATCH_BLOCK_FUNCTIONS"'
+        { lines[NR] = $0 }
+        END {
+            for (i = 1; i <= NR; i++) {
+                if (IsMatchedLine(i))
+                    matches_count++
+            }
+            print matches_count + 0
+        }
     ' "$1" 2>/dev/null
 }
 
 print_log_matches() { # $1 - log file, $2 - match regex, $3 - message prefix
-    LC_ALL=C awk -v re="$2" -v ign="$IGNORE_REGEX" -v prefix="$3" \
-                 -v max_matches="$MAX_REPORTED_MATCHES" -v context="$REPORTED_CONTEXT_LINES" '
+    LC_ALL=C awk -v re="$2" -v ign="$IGNORE_REGEX" -v prefix="$3" -v max_block_lines="$MESSAGE_BLOCK_LINES" \
+                 -v max_matches="$MAX_REPORTED_MATCHES" -v context="$REPORTED_CONTEXT_LINES" \
+        "$AWK_MATCH_BLOCK_FUNCTIONS"'
         { lines[NR] = $0 }
-        $0 ~ re && (ign == "" || $0 !~ ign) {
-            total++
-            if (total <= max_matches)
-                hits[total] = NR
-        }
         END {
+            for (i = 1; i <= NR; i++) {
+                if (!IsMatchedLine(i))
+                    continue
+                total++
+                if (total <= max_matches)
+                    hits[total] = i
+            }
             printed_line = 0
             for (i = 1; i <= total && i <= max_matches; i++) {
                 first_line = hits[i]
@@ -585,6 +637,19 @@ print_log_matches() { # $1 - log file, $2 - match regex, $3 - message prefix
 # ---------------------------------------------------------------------------
 
 CURRENT_APP_PID=""
+RUN_APP_ARGS=()
+
+build_app_run_args() {
+    # Redirect graphics API validation messages from the platform debug output to the console output,
+    # so that they are captured in the application log on Windows and MacOS
+    if [ "$PRINT_DEBUG_MESSAGES_TO_CONSOLE" == true ]; then
+        RUN_APP_ARGS[${#RUN_APP_ARGS[@]}]="$PRINT_DEBUG_MESSAGES_OPTION"
+    fi
+    local app_arg
+    for app_arg in ${APP_ARGS[@]+"${APP_ARGS[@]}"}; do
+        RUN_APP_ARGS[${#RUN_APP_ARGS[@]}]="$app_arg"
+    done
+}
 
 wait_for_process_exit() { # $1 - pid, $2 - timeout in seconds; returns 0 if exited, 1 if still running
     local pid="$1"
@@ -657,7 +722,7 @@ run_application() { # $1 - app name, $2 - executable path
     print_verbose "Log file:   $log_file"
 
     : >"$log_file"
-    "$app_exe_path" ${APP_ARGS[@]+"${APP_ARGS[@]}"} >"$log_file" 2>&1 </dev/null &
+    "$app_exe_path" ${RUN_APP_ARGS[@]+"${RUN_APP_ARGS[@]}"} >"$log_file" 2>&1 </dev/null &
     CURRENT_APP_PID=$!
 
     local exit_status=0
@@ -797,20 +862,21 @@ fi
 
 setup_validation_environment
 setup_display
+build_app_run_args
 
 print_header "Testing ${#APP_PATHS[@]} Methane applications for $PLATFORM_NAME"
 echo " * Build directory:  $BUILD_DIR"
 echo " * Logs directory:   $OUTPUT_DIR"
 echo " * Run time per app: $TIMEOUT_SECONDS seconds"
-if [ ${#APP_ARGS[@]} -gt 0 ]; then
-    echo " * Application args: ${APP_ARGS[*]}"
+if [ ${#RUN_APP_ARGS[@]} -gt 0 ]; then
+    echo " * Application args: ${RUN_APP_ARGS[*]}"
 fi
 if [ -n "$DISPLAY" ]; then
     echo " * Display:          $DISPLAY"
 fi
-if [ "$PLATFORM_NAME" == "Windows" ]; then
-    print_warn " * WARNING: platform debug output is not captured on Windows without a debugger attached,"
-    print_warn "            so DirectX 12 debug layer messages can not be verified by this script."
+if [ "$PRINT_DEBUG_MESSAGES_TO_CONSOLE" != true ] && [ "$PLATFORM_NAME" != "Linux" ]; then
+    print_warn " * WARNING: printing of debug messages to console is disabled, so graphics API validation"
+    print_warn "            messages written to the platform debug output can not be verified by this script."
 fi
 echo "============================================================================="
 
