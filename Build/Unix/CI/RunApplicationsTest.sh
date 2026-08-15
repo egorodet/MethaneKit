@@ -21,6 +21,13 @@
 #   so that they are captured in the application log (see --no-debug-messages-to-console to disable).
 #   The Khronos validation layer is additionally redirected to stdout with VK_KHRONOS_VALIDATION_*
 #   environment variables (see --no-gfx-validation-env).
+#
+#   On MacOS the Metal API validation layer is enabled with MTL_DEBUG_LAYER=1 and the GPU shader
+#   validation layer is enabled with MTL_SHADER_VALIDATION=1. Metal provides no callback to intercept
+#   the API validation messages: they are printed by Metal itself with NSLog or raise an assertion
+#   failure, so both message forms are matched by the patterns below. Command buffer execution errors
+#   and GPU shader validation messages are printed by Methane to the platform debug output the same
+#   way as it is done for DirectX 12 and Vulkan (see Methane::Graphics::Metal::PrintCommandBufferDebugMessages).
 
 set -o pipefail
 
@@ -68,6 +75,8 @@ ERROR_PATTERNS=(
     'DXGI ERROR'
     'DXGI CORRUPTION'
     'Metal API Validation'            # Metal validation layer
+    'failed assertion'                # Metal API validation layer message in the default MTL_DEBUG_LAYER_ERROR_MODE=assert
+    'Invalid device (load|store)'     # Metal GPU shader validation layer message reported with MTLFunctionLog
     'validation fail'
     'Validation Fail'
     '[Aa]ssertion fail'
@@ -107,9 +116,9 @@ WARNING_PATTERNS=(
 # Patterns are matched against the whole multi-line message block, not only against its first line,
 # because message severity is printed in the first line of the block and message text goes below it.
 IGNORE_PATTERNS=(
-    # Informational message printed by Metal on startup when MTL_DEBUG_LAYER=1 is set
-    # (see setup_validation_environment), it is not a validation failure.
-    'Metal API Validation (Enabled|Disabled)'
+    # Informational messages printed by Metal on startup when MTL_DEBUG_LAYER=1 or
+    # MTL_SHADER_VALIDATION=1 is set (see setup_validation_environment), these are not failures.
+    'Metal (API|GPU) Validation (Enabled|Disabled)'
     'loader_get_json'
     'terminator_CreateInstance'
     'Removing layer'
@@ -186,7 +195,8 @@ Options:
                             (auto by default: used when DISPLAY is not set and Xvfb exists)
       --no-debug-messages-to-console  Do not pass $PRINT_DEBUG_MESSAGES_OPTION
                             to applications (use it with older builds not supporting this option)
-      --no-gfx-validation-env  Do not set VK_KHRONOS_VALIDATION_* / MTL_DEBUG_LAYER variables
+      --no-gfx-validation-env  Do not set VK_KHRONOS_VALIDATION_* / MTL_DEBUG_LAYER /
+                            MTL_SHADER_VALIDATION variables
       --context LINES       Number of output lines printed after each match (default: $REPORTED_CONTEXT_LINES)
       --max-matches COUNT   Maximum number of matches printed per application (default: $MAX_REPORTED_MATCHES)
   -l, --list                List discovered applications and exit
@@ -330,7 +340,11 @@ setup_validation_environment() {
     export VK_KHRONOS_VALIDATION_LOG_FILENAME=stdout
     export VK_KHRONOS_VALIDATION_REPORT_FLAGS=error,warn,perf
     if [ "$PLATFORM_NAME" == "MacOS" ]; then
+        # Metal API validation layer checks the correctness of the Metal API use on CPU, while the GPU shader
+        # validation layer checks the correctness of the shader memory accesses on GPU and reports its messages
+        # to the application via MTLFunctionLog, which are printed by Methane to the platform debug output.
         export MTL_DEBUG_LAYER=1
+        export MTL_SHADER_VALIDATION=1
     fi
 }
 

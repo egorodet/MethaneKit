@@ -24,6 +24,7 @@ Metal implementation of the device interface.
 #include <Methane/Graphics/Metal/Device.hh>
 #include <Methane/Graphics/Metal/RenderContext.hh>
 #include <Methane/Graphics/Metal/ComputeContext.hh>
+#include <Methane/Graphics/Metal/DebugMessages.hh>
 #include <Methane/Platform/Apple/Types.hh>
 #include <Methane/Instrumentation.h>
 
@@ -45,6 +46,7 @@ Rhi::DeviceFeatureMask Device::GetSupportedFeatures(const id<MTLDevice>& mtl_dev
 Device::Device(const id<MTLDevice>& mtl_device, const Capabilities& capabilities)
     : Base::Device(MacOS::ConvertFromNsString(mtl_device.name), false, capabilities)
     , m_mtl_device(mtl_device)
+    , m_mtl_log_state(CreateDebugLogState(mtl_device))
 { }
 
 Ptr<Rhi::IRenderContext> Device::CreateRenderContext(const Platform::AppEnvironment& env, tf::Executor& parallel_executor, const Rhi::RenderContextSettings& settings)

@@ -44,8 +44,13 @@ public:
 
     const id<MTLDevice>& GetNativeDevice() const { return m_mtl_device; }
 
+    // MTLLogState printing GPU shader log messages to the platform debug output, it is nil when the Metal
+    // debug layer is disabled or is not supported by the OS (see Metal::CreateDebugLogState).
+    const id& GetNativeLogState() const { return m_mtl_log_state; }
+
 private:
     id<MTLDevice> m_mtl_device;
+    id            m_mtl_log_state;
 };
 
 } // namespace Methane::Graphics::Metal
