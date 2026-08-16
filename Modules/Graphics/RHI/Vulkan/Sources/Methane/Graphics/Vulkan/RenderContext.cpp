@@ -289,23 +289,27 @@ const vk::Semaphore& RenderContext::GetNativeFrameImageAvailableSemaphore(Opt<ui
 uint32_t RenderContext::GetNextFrameBufferIndex()
 {
     META_FUNCTION_TASK();
-    const uint32_t frame_sync_index = Base::RenderContext::GetFrameIndex() % m_frame_sync_pool.size();
-    FrameSync& curr_frame_sync = m_frame_sync_pool[frame_sync_index];
-
-    // The image-available semaphore in this ring slot was last signalled for the render submission
-    // targeting frame 'consumer_frame_index'. Vulkan requires that a binary semaphore passed to
-    // acquireNextImageKHR must not have any pending signal or wait operations, so we have to wait
-    // until the GPU has actually finished that submission (not just until it was acquired) before
-    // it can be safely signalled again here (VUID-vkAcquireNextImageKHR-semaphore-01779).
-    if (curr_frame_sync.consumer_frame_index.has_value())
-    {
-        GetVulkanDefaultCommandQueue(Rhi::CommandListType::Render).WaitUntilCompleted(curr_frame_sync.consumer_frame_index);
-    }
-
     // Acquire next frame image with signalling GPU semaphore when image will be acquired
     uint32_t next_image_index = 0;
+    uint32_t frame_sync_index = 0;
     for (uint32_t acquire_attempt = 0U;; ++acquire_attempt)
     {
+        // NOTE: frame-sync pool is destroyed and re-created together with the swapchain, so the ring slot
+        // has to be taken anew on every attempt, because a swapchain reset done in the retry branches below
+        // invalidates all references to the pool elements taken before it.
+        frame_sync_index = Base::RenderContext::GetFrameIndex() % m_frame_sync_pool.size();
+        FrameSync& curr_frame_sync = m_frame_sync_pool[frame_sync_index];
+
+        // The image-available semaphore in this ring slot was last signalled for the render submission
+        // targeting frame 'consumer_frame_index'. Vulkan requires that a binary semaphore passed to
+        // acquireNextImageKHR must not have any pending signal or wait operations, so we have to wait
+        // until the GPU has actually finished that submission (not just until it was acquired) before
+        // it can be safely signalled again here (VUID-vkAcquireNextImageKHR-semaphore-01779).
+        if (curr_frame_sync.consumer_frame_index.has_value())
+        {
+            GetVulkanDefaultCommandQueue(Rhi::CommandListType::Render).WaitUntilCompleted(curr_frame_sync.consumer_frame_index);
+        }
+
         const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(),
                                                                                g_image_acquire_timeout_ns,
                                                                                curr_frame_sync.vk_unique_semaphore.get(),
@@ -320,11 +324,15 @@ uint32_t RenderContext::GetNextFrameBufferIndex()
             break;
 
         case eErrorSurfaceLostKHR:
-            // NOTE: reset() destroys the lost surface, while release() used here before only gave up
-            // the handle ownership, leaking the surface object and leaving it bound to the window.
+            // NOTE: the swapchain created for the lost surface has to be destroyed before the surface itself
+            // (VUID-vkDestroySurfaceKHR-surface-01266), and reset() is used instead of release() used here before,
+            // which only gave up the handle ownership, leaking the surface object and leaving it bound to the window.
+            // Swapchain resources are released and re-initialized directly instead of calling ResetNativeSwapchain(),
+            // because the latter calls UpdateFrameBufferIndex(), which would re-enter this function recursively.
+            ReleaseNativeSwapchainResources();
             m_vk_unique_surface.reset();
             m_vk_unique_surface = Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), m_app_env);
-            ResetNativeSwapchain();
+            InitializeNativeSwapchain();
             // Image was not acquired, and it has to be taken from the newly created swapchain.
             retry_acquire = true;
             break;
@@ -349,6 +357,7 @@ uint32_t RenderContext::GetNextFrameBufferIndex()
                                                       image_acquire_result, "failed to acquire next image in several attempts");
     }
 
+    FrameSync& curr_frame_sync = m_frame_sync_pool[frame_sync_index];
     const uint32_t next_frame_index = next_image_index % Base::RenderContext::GetSettings().frame_buffers_count;
     m_vk_frame_image_available_semaphores[next_frame_index] = curr_frame_sync.vk_unique_semaphore.get();
     curr_frame_sync.consumer_frame_index = next_frame_index;
