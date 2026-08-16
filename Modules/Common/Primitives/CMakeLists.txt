@@ -12,7 +12,12 @@ set(HEADERS
     ${INCLUDE_DIR}/Timer.hpp
     ${INCLUDE_DIR}/Pimpl.h
     ${INCLUDE_DIR}/Pimpl.hpp
-    ${INCLUDE_DIR}/StbImage.h
+)
+
+# NOTE: these headers are available in the build tree only and are not installed with the public headers,
+#       because they include headers of the external dependencies, which are not installed with Methane Kit.
+set(BUILD_TREE_HEADERS
+    ${INCLUDE_DIR}/StbImage.h # includes <stb_image.h> from the STB external dependency
 )
 
 set(SOURCES
@@ -21,6 +26,7 @@ set(SOURCES
 
 add_library(${TARGET} STATIC
     ${HEADERS}
+    ${BUILD_TREE_HEADERS}
     ${SOURCES}
 )
 
@@ -37,7 +43,7 @@ target_link_libraries(${TARGET}
         fmt
 )
 
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${HEADERS} ${SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${HEADERS} ${BUILD_TREE_HEADERS} ${SOURCES})
 
 set_target_properties(${TARGET}
     PROPERTIES
