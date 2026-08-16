@@ -318,8 +318,11 @@ const Ptrs<Rhi::IDevice>& System::UpdateGpuDevices(const Methane::Platform::AppE
 
     if (m_vk_unique_surface)
     {
-        // When devices are created, temporary surface can be released
-        m_vk_unique_surface.release();
+        // When devices are created, temporary surface can be destroyed.
+        // NOTE: reset() is used instead of release(), because release() only gives up the handle ownership
+        // without destroying the surface, which used to leak it and leave a second live VkSurfaceKHR
+        // bound to the application window for the whole process lifetime.
+        m_vk_unique_surface.reset();
     }
     return gpu_devices;
 }

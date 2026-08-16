@@ -46,14 +46,15 @@ void DescriptorManager::Release()
     Base::DescriptorManager::Release();
 
     std::scoped_lock lock_guard(m_descriptor_pool_mutex);
-    const vk::Device& vk_device = GetContextVk().GetVulkanDevice().GetNativeDevice();
-    for(vk::DescriptorPool& vk_pool : m_vk_used_pools)
-    {
-        vk_device.resetDescriptorPool(vk_pool);
-        m_vk_free_pools.emplace_back(vk_pool);
-    }
+
+    // Descriptor pools are destroyed instead of being reset and reused, because the context is released
+    // to be re-initialized with another device when the rendering device is switched in runtime, and
+    // descriptor sets can not be allocated from the pool which was created with a different device.
+    // Unique pool handles keep the device they were created with, so they are destroyed correctly here.
     m_vk_used_pools.clear();
+    m_vk_free_pools.clear();
     m_vk_current_pool = nullptr;
+    m_vk_descriptor_pools.clear();
 }
 
 void DescriptorManager::SetDescriptorPoolSizeRatio(vk::DescriptorType descriptor_type, float size_ratio)

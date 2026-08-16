@@ -96,8 +96,18 @@ Ptr<Rhi::IRenderPattern> RenderContext::CreateRenderPattern(const Rhi::RenderPat
 void RenderContext::Release()
 {
     META_FUNCTION_TASK();
-    ReleaseNativeSwapchainResources();
+
+    // GPU has to be idle before anything is destroyed, and it is waited for while the context
+    // still owns its command queues, which are released by the base context implementation below.
+    WaitForGpu(WaitFor::RenderComplete);
+
+    // Base context release emits IContextCallback::OnContextReleased, in response to which the application
+    // destroys frame-buffer textures along with the image views and framebuffers created from swap-chain images.
     Context<Base::RenderContext>::Release();
+
+    // Presentable images are owned by the swap-chain, so it may be destroyed only after all objects
+    // created from those images have been destroyed by the context release above.
+    DestroyNativeSwapchainResources();
 }
 
 bool RenderContext::TryRelease()
@@ -131,9 +141,21 @@ void RenderContext::Initialize(Base::Device& device, bool is_callback_emitted)
 {
     META_FUNCTION_TASK();
     SetDevice(device);
+
+    // Context can be re-initialized with another device when the rendering device is switched in runtime,
+    // so the cached native device handle has to be updated before creating any device-owned objects below,
+    // otherwise the swap-chain and frame semaphores would be created with the previously used device.
+    const bool is_device_changed = static_cast<Device&>(device).GetNativeDevice() != m_vk_device;
+    m_vk_device = static_cast<Device&>(device).GetNativeDevice();
+
     // NOTE: VULKAN_HPP_DEFAULT_DISPATCHER is intentionally NOT specialized with this render context device,
     //       see the detailed explanation in Device::Initialize(). The global dispatcher keeps the
     //       instance-level loader trampolines, which dispatch correctly on multi-GPU systems.
+    if (is_device_changed)
+    {
+        PrimeSurfacePresentation();
+    }
+
     InitializeNativeSwapchain();
     Context<Base::RenderContext>::Initialize(device, is_callback_emitted);
 }
@@ -298,7 +320,9 @@ uint32_t RenderContext::GetNextFrameBufferIndex()
             break;
 
         case eErrorSurfaceLostKHR:
-            m_vk_unique_surface.release();
+            // NOTE: reset() destroys the lost surface, while release() used here before only gave up
+            // the handle ownership, leaking the surface object and leaving it bound to the window.
+            m_vk_unique_surface.reset();
             m_vk_unique_surface = Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), m_app_env);
             ResetNativeSwapchain();
             // Image was not acquired, and it has to be taken from the newly created swapchain.
@@ -353,6 +377,14 @@ vk::SurfaceFormatKHR RenderContext::ChooseSwapSurfaceFormat(const std::vector<vk
 vk::PresentModeKHR RenderContext::ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) const
 {
     META_FUNCTION_TASK();
+    // NOTE: Mailbox is preferred over Immediate when V-Sync is disabled, because it presents the most recent
+    //       frame without tearing. On hybrid-GPU systems this has a known driver-side cost: after the rendering
+    //       device has been switched in runtime and another physical device has presented to this window surface,
+    //       Mailbox presentation is demoted to a path limited to twice the display refresh rate, and nothing
+    //       restores it (swap-chain re-creation, context reset, surface re-creation and window re-positioning were
+    //       all measured to have no effect), while Immediate keeps presenting at the full rate. This is a frame
+    //       rate difference only: frames rendered above the refresh rate are discarded by Mailbox in any case,
+    //       so the displayed image is the same, and tearing-free presentation is kept as the default behavior.
     const std::vector<vk::PresentModeKHR> required_present_modes = GetSettings().vsync_enabled
         ? std::vector<vk::PresentModeKHR>{ vk::PresentModeKHR::eFifoRelaxed, vk::PresentModeKHR::eFifo }
         : std::vector<vk::PresentModeKHR>{ vk::PresentModeKHR::eMailbox,     vk::PresentModeKHR::eImmediate };
@@ -402,7 +434,7 @@ vk::Extent2D RenderContext::ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& s
     );
 }
 
-void RenderContext::InitializeNativeSwapchain()
+RenderContext::NativeSwapchain RenderContext::CreateNativeSwapchain(Opt<vk::PresentModeKHR> forced_present_mode_opt) const
 {
     META_FUNCTION_TASK();
 
@@ -414,8 +446,10 @@ void RenderContext::InitializeNativeSwapchain()
 
     const Device::SwapChainSupport swap_chain_support  = GetVulkanDevice().GetSwapChainSupportForSurface(GetNativeSurface());
     const vk::SurfaceFormatKHR     swap_surface_format = ChooseSwapSurfaceFormat(swap_chain_support.formats);
-    const vk::PresentModeKHR       swap_present_mode   = ChooseSwapPresentMode(swap_chain_support.present_modes);
     const vk::Extent2D             swap_extent         = ChooseSwapExtent(swap_chain_support.capabilities);
+    const vk::PresentModeKHR       swap_present_mode   = forced_present_mode_opt // NOSONAR - can not use value_or here
+                                                       ? *forced_present_mode_opt
+                                                       : ChooseSwapPresentMode(swap_chain_support.present_modes);
 
     uint32_t image_count = std::max(swap_chain_support.capabilities.minImageCount, GetSettings().frame_buffers_count);
     if (swap_chain_support.capabilities.maxImageCount && image_count > swap_chain_support.capabilities.maxImageCount)
@@ -423,32 +457,45 @@ void RenderContext::InitializeNativeSwapchain()
         image_count = swap_chain_support.capabilities.maxImageCount;
     }
 
-    m_vk_unique_swapchain = m_vk_device.createSwapchainKHRUnique(
-        vk::SwapchainCreateInfoKHR(
-            vk::SwapchainCreateFlagsKHR(),
-            GetNativeSurface(),
-            image_count,
-            swap_surface_format.format,
-            swap_surface_format.colorSpace,
-            swap_extent,
-            1,
-            vk::ImageUsageFlagBits::eColorAttachment,
-            vk::SharingMode::eExclusive, 0, nullptr,
-            swap_chain_support.capabilities.currentTransform,
-            vk::CompositeAlphaFlagBitsKHR::eOpaque,
-            swap_present_mode,
-            true
-        )
-    );
-    m_vk_frame_images = m_vk_device.getSwapchainImagesKHR(GetNativeSwapchain());
-    m_vk_frame_format = swap_surface_format.format;
-    m_vk_frame_extent = swap_extent;
+    return NativeSwapchain{
+        m_vk_device.createSwapchainKHRUnique(
+            vk::SwapchainCreateInfoKHR(
+                vk::SwapchainCreateFlagsKHR(),
+                GetNativeSurface(),
+                image_count,
+                swap_surface_format.format,
+                swap_surface_format.colorSpace,
+                swap_extent,
+                1,
+                vk::ImageUsageFlagBits::eColorAttachment,
+                vk::SharingMode::eExclusive, 0, nullptr,
+                swap_chain_support.capabilities.currentTransform,
+                vk::CompositeAlphaFlagBitsKHR::eOpaque,
+                swap_present_mode,
+                true
+            )
+        ),
+        swap_surface_format.format,
+        swap_extent,
+        image_count
+    };
+}
+
+void RenderContext::InitializeNativeSwapchain()
+{
+    META_FUNCTION_TASK();
+
+    NativeSwapchain native_swapchain = CreateNativeSwapchain();
+    m_vk_unique_swapchain = std::move(native_swapchain.vk_unique_swapchain);
+    m_vk_frame_format     = native_swapchain.format;
+    m_vk_frame_extent     = native_swapchain.extent;
+    m_vk_frame_images     = m_vk_device.getSwapchainImagesKHR(GetNativeSwapchain());
 
     // Guard against a swapchain which reports no images at all: frame buffers count would be invalidated to zero,
     // leaving the context without any frame synchronization semaphores and failing in an obscure way much later.
     META_CHECK_NOT_ZERO_DESCR(m_vk_frame_images.size(),
                               "swapchain was created with {} images, but no swapchain images were returned by the device",
-                              image_count);
+                              native_swapchain.requested_image_count);
 
     if (m_vk_frame_images.size() != GetSettings().frame_buffers_count)
         InvalidateFrameBuffersCount(static_cast<uint32_t>(m_vk_frame_images.size()));
@@ -481,12 +528,34 @@ void RenderContext::InitializeNativeSwapchain()
     Data::Emitter<IRenderContextCallback>::Emit(&IRenderContextCallback::OnRenderContextSwapchainChanged, std::ref(*this));
 }
 
+void RenderContext::PrimeSurfacePresentation()
+{
+    META_FUNCTION_TASK();
+
+    // Workaround for a presentation failure observed on hybrid-GPU systems when the rendering device is
+    // switched in runtime: once a swap-chain of another physical device has presented to this window surface,
+    // a newly created swap-chain with a non-FIFO present mode (Mailbox or Immediate, used when V-Sync is off)
+    // presents frames with VK_SUCCESS, but the window content is never updated on screen again.
+    // Creating a throw-away FIFO swap-chain for the surface resets that state in the presentation engine,
+    // after which the swap-chain created with the requested present mode presents normally.
+    // FIFO present mode is guaranteed by the Vulkan specification to be supported by any presentable surface.
+    // Priming swap-chain is destroyed immediately when this unique handle goes out of scope.
+    const NativeSwapchain priming_swapchain = CreateNativeSwapchain(vk::PresentModeKHR::eFifo);
+    META_UNUSED(priming_swapchain);
+}
+
 void RenderContext::ReleaseNativeSwapchainResources()
 {
     META_FUNCTION_TASK();
     // Waiting for GPU idle guarantees that all frame-sync semaphores are no longer in use
     WaitForGpu(WaitFor::RenderComplete);
 
+    DestroyNativeSwapchainResources();
+}
+
+void RenderContext::DestroyNativeSwapchainResources()
+{
+    META_FUNCTION_TASK();
     m_frame_sync_pool.clear();
     m_vk_frame_image_available_semaphores.clear();
     m_vk_frame_images.clear();
