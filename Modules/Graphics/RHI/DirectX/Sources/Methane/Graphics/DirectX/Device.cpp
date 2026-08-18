@@ -252,7 +252,6 @@ const wrl::ComPtr<ID3D12Device>& Device::GetNativeDevice() const
     }
     else
     {
-        assert(false);
         META_LOG("WARNING: GPU instrumentation results may be unreliable because we failed to switch GPU to stable power state." \
                  "Enable Windows Developer Mode and try again.");
     }
