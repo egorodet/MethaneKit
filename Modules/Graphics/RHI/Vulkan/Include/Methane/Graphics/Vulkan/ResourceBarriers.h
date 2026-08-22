@@ -53,6 +53,7 @@ public:
     explicit ResourceBarriers(const Set& barriers);
 
     // IResourceBarriers overrides
+    using Base::ResourceBarriers::Remove;
     AddResult Add(const Barrier& barrier) override;
     bool Remove(const Barrier::Id& id) override;
 

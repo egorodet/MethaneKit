@@ -202,6 +202,6 @@ function(add_methane_application)
     endif()
 
     get_target_property(METHANE_PREREQUISITE_MODULES MethaneKit PREREQUISITE_MODULES)
-    add_prerequisite_binaries(${APP_TARGET} "${METHANE_PREREQUISITE_MODULES}" ${APP_INSTALL_DIR})
+    add_prerequisite_binaries(${APP_TARGET} "${METHANE_PREREQUISITE_MODULES}" ${APP_INSTALL_DIR} FALSE)
 
 endfunction()

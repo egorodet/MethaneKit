@@ -58,6 +58,9 @@ public:
     
     const id<MTLCommandQueue>&  GetNativeCommandQueue() const { return m_mtl_command_queue; }
 
+    // Creates MTLCommandBuffer with debug messages reporting enabled when the Metal debug layer is enabled
+    [[nodiscard]] id<MTLCommandBuffer> CreateNativeCommandBuffer() const;
+
 private:
     void Reset();
     

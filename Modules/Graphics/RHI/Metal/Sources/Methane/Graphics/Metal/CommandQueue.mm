@@ -29,6 +29,7 @@ Metal implementation of the command queue interface.
 #include <Methane/Graphics/Metal/RenderCommandList.hh>
 #include <Methane/Graphics/Metal/ParallelRenderCommandList.hh>
 #include <Methane/Graphics/Metal/RenderContext.hh>
+#include <Methane/Graphics/Metal/DebugMessages.hh>
 
 #include <Methane/Platform/Apple/Types.hh>
 #include <Methane/Instrumentation.h>
@@ -41,7 +42,8 @@ namespace Methane::Graphics::Metal
 
 CommandQueue::CommandQueue(const Base::Context& context, Rhi::CommandListType command_lists_type)
     : Base::CommandQueueTracking(context, command_lists_type)
-    , m_mtl_command_queue([GetMetalContext().GetMetalDevice().GetNativeDevice() newCommandQueue])
+    , m_mtl_command_queue(CreateDebugCommandQueue(GetMetalContext().GetMetalDevice().GetNativeDevice(),
+                                                  GetMetalContext().GetMetalDevice().GetNativeLogState()))
 {
     META_FUNCTION_TASK();
     InitializeTracyGpuContext(
@@ -98,6 +100,13 @@ bool CommandQueue::SetName(std::string_view name)
     META_CHECK_NOT_NULL(m_mtl_command_queue);
     m_mtl_command_queue.label = MacOS::ConvertToNsString(name);
     return true;
+}
+
+id<MTLCommandBuffer> CommandQueue::CreateNativeCommandBuffer() const
+{
+    META_FUNCTION_TASK();
+    META_CHECK_NOT_NULL(m_mtl_command_queue);
+    return CreateDebugCommandBuffer(m_mtl_command_queue);
 }
 
 const IContext& CommandQueue::GetMetalContext() const noexcept

@@ -22,6 +22,7 @@ Windows platform utility functions.
 ******************************************************************************/
 
 #include <Methane/Platform/Windows/Utils.h>
+#include <Methane/Platform/Utils.h>
 #include <Methane/Instrumentation.h>
 #include <Methane/Checks.hpp>
 
@@ -30,6 +31,7 @@ Windows platform utility functions.
 
 #include <nowide/convert.hpp>
 #include <string_view>
+#include <iostream>
 #include <array>
 
 namespace Methane::Platform
@@ -38,7 +40,15 @@ namespace Methane::Platform
 void PrintToDebugOutput(std::string_view msg)
 {
     META_FUNCTION_TASK();
-    OutputDebugStringA(fmt::format("{}\n", msg).c_str());
+    if (IsPrintToConsoleEnabled())
+    {
+        // Debug output is not visible on Windows without debugger attached, so it is printed to console when enabled
+        std::cout << msg << std::endl; // NOSONAR
+    }
+    else
+    {
+        OutputDebugStringA(fmt::format("{}\n", msg).c_str());
+    }
     TracyMessage(msg.data(), msg.size());
 }
 

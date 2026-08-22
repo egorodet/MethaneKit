@@ -22,12 +22,14 @@ MacOS platform utility functions.
 ******************************************************************************/
 
 #include <Methane/Platform/Apple/Utils.hh>
+#include <Methane/Platform/Utils.h>
 #include <Methane/Instrumentation.h>
 #include <Methane/Checks.hpp>
 
 #import <Foundation/Foundation.h>
 
 #include <string_view>
+#include <iostream>
 
 namespace Methane::Platform
 {
@@ -35,7 +37,15 @@ namespace Methane::Platform
 void PrintToDebugOutput(std::string_view msg)
 {
     META_FUNCTION_TASK();
-    NSLog(@"%s", msg.data());
+    if (IsPrintToConsoleEnabled())
+    {
+        // NSLog writes to the system log, so debug messages are printed to console output when enabled
+        std::cout << msg << std::endl; // NOSONAR
+    }
+    else
+    {
+        NSLog(@"%s", msg.data());
+    }
     TracyMessage(msg.data(), msg.size());
 }
 

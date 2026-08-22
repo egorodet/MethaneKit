@@ -156,6 +156,7 @@ private:
     bool            m_is_resizing = false;
     bool            m_is_resize_required_to_render = false;
     bool            m_has_keyboard_focus = false;
+    bool            m_print_debug_messages_to_console = false;
     Input::State    m_input_state;
 
     mutable UniquePtr<tf::Executor> m_parallel_executor_ptr;

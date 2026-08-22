@@ -575,6 +575,25 @@ TEST_CASE("RHI Render Command List Functions", "[rhi][list][render]")
         CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::Triangle);
     }
 
+    SECTION("Can Draw with Two Different Primitive Types in One Command List")
+    {
+        REQUIRE_NOTHROW(cmd_list.ResetWithState(render_state));
+        REQUIRE_NOTHROW(cmd_list.SetViewState(view_state));
+        REQUIRE(cmd_list.SetVertexBuffers(vertex_buffer_set));
+
+        REQUIRE_NOTHROW(cmd_list.Draw(Rhi::RenderPrimitive::Triangle, 100U, 10U, 12U, 3U));
+        CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::Triangle);
+        CHECK(null_cmd_list.GetDrawingState().changes.HasAnyBit(Base::RenderDrawingState::Change::PrimitiveType));
+
+        REQUIRE_NOTHROW(cmd_list.Draw(Rhi::RenderPrimitive::TriangleStrip, 100U, 10U, 12U, 3U));
+        CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::TriangleStrip);
+        CHECK(null_cmd_list.GetDrawingState().changes.HasAnyBit(Base::RenderDrawingState::Change::PrimitiveType));
+
+        REQUIRE_NOTHROW(cmd_list.Draw(Rhi::RenderPrimitive::Line, 100U, 10U, 12U, 3U));
+        CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::Line);
+        CHECK(null_cmd_list.GetDrawingState().changes.HasAnyBit(Base::RenderDrawingState::Change::PrimitiveType));
+    }
+
     SECTION("Can Not Draw Triangles from Uninitialized Vertex Buffers")
     {
         dynamic_cast<Null::Buffer&>(vertex_buffer_one.GetInterface()).SetInitializedDataSize(0U);
@@ -628,6 +647,22 @@ TEST_CASE("RHI Render Command List Functions", "[rhi][list][render]")
         CHECK_FALSE(null_cmd_list.GetDrawingState().primitive_type_opt.has_value());
         REQUIRE_NOTHROW(cmd_list.DrawIndexed(Rhi::RenderPrimitive::Triangle, indices_count - 10U, 10U, 42U, 12U, 3U));
         CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::Triangle);
+    }
+
+    SECTION("Can Draw Indexed with Two Different Primitive Types in One Command List")
+    {
+        REQUIRE_NOTHROW(cmd_list.ResetWithState(render_state));
+        REQUIRE_NOTHROW(cmd_list.SetViewState(view_state));
+        REQUIRE(cmd_list.SetVertexBuffers(vertex_buffer_set));
+        REQUIRE(cmd_list.SetIndexBuffer(index_buffer_one));
+
+        REQUIRE_NOTHROW(cmd_list.DrawIndexed(Rhi::RenderPrimitive::Triangle, indices_count - 10U, 10U, 42U, 12U, 3U));
+        CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::Triangle);
+        CHECK(null_cmd_list.GetDrawingState().changes.HasAnyBit(Base::RenderDrawingState::Change::PrimitiveType));
+
+        REQUIRE_NOTHROW(cmd_list.DrawIndexed(Rhi::RenderPrimitive::TriangleStrip, indices_count - 10U, 10U, 42U, 12U, 3U));
+        CHECK(null_cmd_list.GetDrawingState().primitive_type_opt == Rhi::RenderPrimitive::TriangleStrip);
+        CHECK(null_cmd_list.GetDrawingState().changes.HasAnyBit(Base::RenderDrawingState::Change::PrimitiveType));
     }
 
     SECTION("Can Not Draw Indexed Triangles from Uninitialized Vertex Buffers")

@@ -24,8 +24,27 @@ Methane platform utility functions
 #include <Methane/Platform/Utils.h>
 #include <Methane/Instrumentation.h>
 
+#include <atomic>
+
 namespace Methane::Platform
 {
+
+static std::atomic<bool>& GetPrintToConsoleEnabledFlag() noexcept
+{
+    static std::atomic<bool> s_print_to_console_enabled(false);
+    return s_print_to_console_enabled;
+}
+
+void SetPrintToConsoleEnabled(bool print_to_console_enabled) noexcept
+{
+    META_FUNCTION_TASK();
+    GetPrintToConsoleEnabledFlag().store(print_to_console_enabled);
+}
+
+bool IsPrintToConsoleEnabled() noexcept
+{
+    return GetPrintToConsoleEnabledFlag().load();
+}
 
 inline void SplitInChunks(const std::string_view str, size_t max_chunk_size, std::vector<std::string_view>& output)
 {

@@ -34,6 +34,7 @@ Vulkan GPU query pool implementation.
 #include <Methane/Checks.hpp>
 
 #include <chrono>
+#include <limits>
 #include <magic_enum/magic_enum.hpp>
 
 static const vk::TimeDomainEXT g_vk_cpu_time_domain =
@@ -178,21 +179,47 @@ Ptr<Rhi::ITimestampQuery> TimestampQueryPool::CreateTimestampQuery(Rhi::ICommand
 Rhi::ITimestampQueryPool::CalibratedTimestamps TimestampQueryPool::Calibrate()
 {
     META_FUNCTION_TASK();
+
+    // Number of attempts to sample CPU-GPU timestamps with a deviation below the acceptable maximum.
+    // The retry loop must be bounded: the maximum deviation is measured on an idle device in the constructor,
+    // while under load (with all command queues calibrating concurrently) the driver may keep reporting
+    // a larger deviation indefinitely. Calibrate() is called from the command queue tracking thread,
+    // so looping here forever would stop completion of all command lists executing in that queue
+    // and hang any thread waiting for them (see CommandQueueTracking::WaitForExecution).
+    constexpr uint32_t max_calibration_attempts = 16U;
+
     const vk::Device& vk_device = GetVulkanCommandQueue().GetVulkanDevice().GetNativeDevice();
     const std::array<vk::CalibratedTimestampInfoEXT, 2> timestamp_infos = {{ { vk::TimeDomainEXT::eDevice }, { g_vk_cpu_time_domain }, }};
     std::array<uint64_t, 2> timestamps{{}};
+    std::array<uint64_t, 2> best_timestamps{{}};
     uint64_t deviation = 0U;
+    uint64_t best_deviation = std::numeric_limits<uint64_t>::max();
 
-    do
+    for(uint32_t attempt_index = 0U; attempt_index < max_calibration_attempts; ++attempt_index)
     {
         const vk::Result vk_calibrate_result = vk_device.getCalibratedTimestampsEXT(static_cast<uint32_t>(timestamp_infos.size()), timestamp_infos.data(), timestamps.data(), &deviation);
         META_CHECK_EQUAL(vk_calibrate_result, vk::Result::eSuccess);
+
+        if (deviation < best_deviation)
+        {
+            best_deviation  = deviation;
+            best_timestamps = timestamps;
+        }
+        if (deviation <= m_deviation)
+            break;
     }
-    while(deviation > m_deviation);
+
+    if (best_deviation > m_deviation)
+    {
+        // The deviation measured on the idle device is not reachable under load any more:
+        // relax the acceptable maximum (with the same 3/2 factor as used in the constructor),
+        // so that the following calibrations succeed from the first attempt instead of retrying every time.
+        m_deviation = best_deviation * 3 / 2;
+    }
 
     CalibratedTimestamps calibrated_timestamps{};
-    calibrated_timestamps.gpu_ts = timestamps[0];
-    calibrated_timestamps.cpu_ts = timestamps[1] * Data::GetQpcToNSecMultiplier();
+    calibrated_timestamps.gpu_ts = best_timestamps[0];
+    calibrated_timestamps.cpu_ts = best_timestamps[1] * Data::GetQpcToNSecMultiplier();
     SetCalibratedTimestamps(calibrated_timestamps);
 
     return calibrated_timestamps;

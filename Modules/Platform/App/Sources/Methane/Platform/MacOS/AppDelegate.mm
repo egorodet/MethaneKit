@@ -72,6 +72,10 @@ using namespace Methane::Platform;
     m_window.contentMinSize = NSMakeSize(static_cast<CGFloat>(min_frame_size.GetWidth()), static_cast<CGFloat>(min_frame_size.GetHeight()));
     m_window.title    = MacOS::ConvertToNsString(settings_ptr->name);
 
+    // Window state restoration is not implemented and window size and position are set from application settings,
+    // so it is disabled to stop AppKit from persisting the saved state of the window which is never restored
+    m_window.restorable = NO;
+
     m_window_delegate = [[WindowDelegate alloc] initWithApp:app_ptr];
     m_window.delegate = m_window_delegate;
 
@@ -154,6 +158,15 @@ using namespace Methane::Platform;
 {
     META_FUNCTION_TASK();
     #pragma unused(sender)
+    return YES;
+}
+
+- (BOOL) applicationSupportsSecureRestorableState:(NSApplication *)app
+{
+    META_FUNCTION_TASK();
+    #pragma unused(app)
+    // Opt-in to secure coding of the application restorable state, as required since MacOS 12,
+    // to silence AppKit warning printed on automatic save of the restorable state
     return YES;
 }
 

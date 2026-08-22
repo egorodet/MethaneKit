@@ -28,6 +28,7 @@ Metal implementation of the render context interface.
 #include <Methane/Graphics/Metal/CommandQueue.hh>
 #include <Methane/Graphics/Metal/Types.hh>
 #include <Methane/Graphics/Metal/RenderContextAppView.hh>
+#include <Methane/Graphics/Metal/DebugMessages.hh>
 
 #include <Methane/Instrumentation.h>
 #include <Methane/Platform/Apple/Types.hh>
@@ -159,13 +160,14 @@ void RenderContext::Present()
     META_FUNCTION_TASK();
     Context<Base::RenderContext>::Present();
 
-    id<MTLCommandBuffer> mtl_cmd_buffer = [GetMetalDefaultCommandQueue(Rhi::CommandListType::Render).GetNativeCommandQueue() commandBuffer];
+    id<MTLCommandBuffer> mtl_cmd_buffer = GetMetalDefaultCommandQueue(Rhi::CommandListType::Render).CreateNativeCommandBuffer();
     mtl_cmd_buffer.label = [NSString stringWithFormat:@"%@ Present Command", GetNsName()];
+    [mtl_cmd_buffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull mtl_completed_cmd_buffer) {
+        PrintCommandBufferDebugMessages(mtl_completed_cmd_buffer);
 #ifdef FRAMES_SYNC_WITH_DISPATCH_SEMAPHORE
-    [mtl_cmd_buffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull) {
         dispatch_semaphore_signal(m_dispatch_semaphore);
-    }];
 #endif
+    }];
     [mtl_cmd_buffer presentDrawable:GetNativeDrawable()];
     [mtl_cmd_buffer commit];
 

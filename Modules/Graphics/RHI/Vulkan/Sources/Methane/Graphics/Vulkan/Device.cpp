@@ -175,9 +175,17 @@ vk::DeviceQueueCreateInfo QueueFamilyReservation::MakeDeviceQueueCreateInfo() co
     return vk::DeviceQueueCreateInfo(vk::DeviceQueueCreateFlags(), m_family_index, m_queues_count, m_priorities.data());
 }
 
+bool QueueFamilyReservation::HasFreeQueues() const
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_free_indices_mutex);
+    return !m_free_indices.IsEmpty();
+}
+
 uint32_t QueueFamilyReservation::ClaimQueueIndex() const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_free_indices_mutex);
     if (m_free_indices.IsEmpty())
         throw EmptyArgumentException<Data::RangeSet<uint32_t>>(std::source_location::current(), "m_free_indices",
                                                                "device queue family has no free queues in reservation");
@@ -191,15 +199,17 @@ void QueueFamilyReservation::ReleaseQueueIndex(uint32_t queue_index) const
 {
     META_FUNCTION_TASK();
     META_CHECK_LESS(queue_index, m_queues_count);
+    std::scoped_lock lock_guard(m_free_indices_mutex);
     m_free_indices.Add({ queue_index, queue_index + 1});
 }
 
-void QueueFamilyReservation::IncrementQueuesCount(uint32_t extra_queues_count) noexcept
+void QueueFamilyReservation::IncrementQueuesCount(uint32_t extra_queues_count)
 {
     META_FUNCTION_TASK();
     if (!extra_queues_count)
         return;
 
+    std::scoped_lock lock_guard(m_free_indices_mutex);
     m_free_indices.Add({m_queues_count, m_queues_count + extra_queues_count});
     m_queues_count += extra_queues_count;
     m_priorities.resize(m_queues_count, 0.F);
@@ -213,6 +223,7 @@ Device::Device(const vk::PhysicalDevice& vk_physical_device, const vk::SurfaceKH
     , m_supported_extension_names_storage(GetDeviceSupportedExtensionNames(vk_physical_device))
     , m_supported_extension_names_set(m_supported_extension_names_storage.begin(), m_supported_extension_names_storage.end())
     , m_is_dynamic_state_supported(IsExtensionSupported(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME))
+    , m_is_portability_subset_supported(IsExtensionSupported(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
     , m_vk_queue_family_properties(vk_physical_device.getQueueFamilyProperties())
 {
     META_FUNCTION_TASK();
@@ -251,9 +262,22 @@ Device::Device(const vk::PhysicalDevice& vk_physical_device, const vk::SurfaceKH
         }
     }
 
-    if (IsExtensionSupported(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
+    if (m_is_portability_subset_supported)
     {
         enabled_extension_names.emplace_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+    }
+
+    // Shaders are compiled from HLSL to SPIRV with '-fspv-reflect' DXC option, which adds SPV_GOOGLE_hlsl_functionality1
+    // and SPV_GOOGLE_user_type extension declarations to the SPIRV byte code. HLSL semantic names decorated with
+    // SPV_GOOGLE_hlsl_functionality1 are used to match vertex shader inputs with vertex buffer layouts (see Shader.cpp).
+    // These device extensions have to be enabled to make that SPIRV byte code valid (VUID-VkShaderModuleCreateInfo-pCode-08742).
+    for(const std::string_view extension_name : { std::string_view(VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME),
+                                                  std::string_view(VK_GOOGLE_USER_TYPE_EXTENSION_NAME) })
+    {
+        if (IsExtensionSupported(extension_name))
+        {
+            enabled_extension_names.emplace_back(extension_name);
+        }
     }
 
     std::vector<const char*> raw_enabled_extension_names;
@@ -281,7 +305,16 @@ Device::Device(const vk::PhysicalDevice& vk_physical_device, const vk::SurfaceKH
     vk_device_timeline_semaphores_feature.setPNext(&vk_device_host_query_reset_feature);
 
     m_vk_unique_device = vk_physical_device.createDeviceUnique(vk_device_info);
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_vk_unique_device.get());
+
+    // NOTE: VULKAN_HPP_DEFAULT_DISPATCHER is intentionally NOT specialized with the created device here.
+    //       System::UpdateGpuDevices() constructs a Device for every physical device in the system, and the
+    //       default dispatcher is a single global object: VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Device) would
+    //       resolve all device-level entry points via vkGetDeviceProcAddr for that one device, so the device
+    //       constructed last would silently win. On a multi-GPU system (e.g. NVIDIA + AMD) the rendering device
+    //       would then dispatch its calls into another vendor's ICD, which returns garbage or crashes.
+    //       The instance-level pointers loaded by System's VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Instance)
+    //       are loader trampolines which dispatch to the ICD owning the handle passed in, so they are valid
+    //       for every device, at the cost of one extra indirection per call.
 }
 
 Ptr<Rhi::IRenderContext> Device::CreateRenderContext(const Methane::Platform::AppEnvironment& env, tf::Executor& parallel_executor, const Rhi::RenderContextSettings& settings)
@@ -376,7 +409,7 @@ void Device::ReserveQueueFamily(Rhi::CommandListType cmd_list_type, uint32_t que
     const vk::QueueFlags queue_flags = GetQueueFlagsByType(cmd_list_type);
     const std::optional<uint32_t> vk_queue_family_index = FindQueueFamily(m_vk_queue_family_properties, queue_flags, queues_count,
                                                                           reserved_queues_count_per_family, m_vk_physical_device, vk_surface);
-    if (!vk_queue_family_index)
+    if (!vk_queue_family_index.has_value())
         throw IncompatibleException(fmt::format("Device does not support the required queue type {} and count {}",
                                                 magic_enum::enum_name(cmd_list_type), queues_count));
 

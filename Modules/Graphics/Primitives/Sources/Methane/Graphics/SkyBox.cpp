@@ -43,7 +43,7 @@ SkyBox rendering primitive
 #include <Methane/Instrumentation.h>
 #include <Methane/Pimpl.hpp>
 
-#include <hlsl++_matrix_float.h>
+#include <hlsl++/matrix_float.h>
 
 namespace hlslpp // NOSONAR
 {

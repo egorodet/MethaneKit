@@ -39,6 +39,7 @@ static const std::string_view g_proc_self_exe = "/proc/self/exe";
 void PrintToDebugOutput(__attribute__((unused)) std::string_view msg)
 {
     META_FUNCTION_TASK();
+    // Debug output is always printed to console on Linux, so IsPrintToConsoleEnabled() does not change anything here
     std::cout << msg << std::endl;
     TracyMessage(msg.data(), msg.size());
 }

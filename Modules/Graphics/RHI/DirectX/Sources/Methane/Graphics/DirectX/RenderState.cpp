@@ -207,7 +207,13 @@ void RenderState::Reset(const Settings& settings)
     rasterizer_desc.CullMode              = ConvertRasterizerCullModeToD3D12(settings.rasterizer.cull_mode);
     rasterizer_desc.FrontCounterClockwise = settings.rasterizer.is_front_counter_clockwise;
     rasterizer_desc.MultisampleEnable     = settings.rasterizer.sample_count > 1;
-    rasterizer_desc.ForcedSampleCount     = !settings.depth.enabled && !settings.stencil.enabled ? settings.rasterizer.sample_count : 0;
+
+    // ForcedSampleCount is left with default zero value, which means that sample count is not forced
+    // and rasterization is done with the sample count of the bound render targets.
+    // Non-zero ForcedSampleCount enables target-independent rasterization, which is used for UAV rendering only
+    // and requires depth-stencil view to be unbound, but it is bound by the render pass with depth attachment.
+    // Otherwise DirectX debug layer reports error D3D12_MESSAGE_ID_CREATEGRAPHICSPIPELINESTATE_INVALID_FORCED_SAMPLE_COUNT (672):
+    // "When ForcedSampleCount RasterizerState is > 0, a DepthStencilView cannot be bound".
 
     // Set Blending state descriptor
     CD3DX12_BLEND_DESC blend_desc(D3D12_DEFAULT);
@@ -271,9 +277,13 @@ void RenderState::Reset(const Settings& settings)
         m_pipeline_state_desc.RTVFormats[attachment_index++] = TypeConverter::PixelFormatToDxgi(color_format);
     }
     m_pipeline_state_desc.NumRenderTargets = static_cast<UINT>(attachment_formats.colors.size());
-    m_pipeline_state_desc.DSVFormat = settings.depth.enabled
-                                    ? TypeConverter::PixelFormatToDxgi(attachment_formats.depth)
-                                    : DXGI_FORMAT_UNKNOWN;
+
+    // Depth-stencil view format has to match the depth attachment format of the render pattern even when depth test
+    // is disabled in this render state, because depth-stencil view is bound to the render pass in any case.
+    // Otherwise DirectX debug layer reports error D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_DEPTH_STENCIL_VIEW_NOT_SET (1170):
+    // "The PSO indicates a format of DXGI_FORMAT_UNKNOWN to be bound to the rasterizer,
+    //  but the render pass depth stencil descriptor indicates an incompatible format".
+    m_pipeline_state_desc.DSVFormat = TypeConverter::PixelFormatToDxgi(attachment_formats.depth);
 
     m_pipeline_state_cptr.Reset();
 }

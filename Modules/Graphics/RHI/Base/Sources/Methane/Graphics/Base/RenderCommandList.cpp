@@ -287,7 +287,7 @@ void RenderCommandList::UpdateDrawingState(Primitive primitive_type)
     META_FUNCTION_TASK();
     using enum RenderDrawingState::Change;
     DrawingState& drawing_state = GetDrawingState();
-    if (!drawing_state.primitive_type_opt || *drawing_state.primitive_type_opt == primitive_type)
+    if (!drawing_state.primitive_type_opt || *drawing_state.primitive_type_opt != primitive_type)
     {
         drawing_state.changes |= PrimitiveType;
         drawing_state.primitive_type_opt = primitive_type;

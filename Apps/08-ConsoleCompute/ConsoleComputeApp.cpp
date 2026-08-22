@@ -222,7 +222,7 @@ void ConsoleComputeApp::Compute()
     m_compute_cmd_list.Commit();
 
     compute_cmd_queue.Execute(m_compute_cmd_list_set);
-    m_compute_context.WaitForGpu(rhi::ContextWaitFor::ComputeComplete);
+    m_compute_cmd_list.WaitUntilCompleted();
     m_frame_data = m_frame_texture.GetData(compute_cmd_queue);
     m_fps_counter.OnCpuFrameReadyToPresent();
 }

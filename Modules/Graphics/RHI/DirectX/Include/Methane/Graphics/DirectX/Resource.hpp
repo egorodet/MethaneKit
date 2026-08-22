@@ -170,21 +170,33 @@ protected:
     {
         META_FUNCTION_TASK();
         auto& transfer_cmd_list = dynamic_cast<TransferCommandList&>(GetContext().GetUploadCommandKit().GetListForEncoding());
-        if (GetState() == transfer_state)
+
+        // Resources used by command lists of COPY type are required to stay in Common state:
+        // copy queue implicitly promotes them to CopyDest or CopySource state for the time of copy operation
+        // and decays them back to Common state when command lists execution is completed.
+        // Transitioning resource to CopyDest state before copying with COPY type command list makes
+        // DirectX debug layer to report error D3D12_MESSAGE_ID_RESOURCE_BARRIER_MISMATCHING_COMMAND_LIST_TYPE (1334):
+        // "Barrier layout(D3D12_BARRIER_LAYOUT_LEGACY_COPY_DEST) ... does not match expected layout
+        //  (D3D12_BARRIER_LAYOUT_COMMON) using D3D12_COMMAND_LIST_TYPE_COPY command list ... in CopyTextureRegion".
+        const bool is_copy_cmd_list = transfer_cmd_list.GetNativeCommandList().GetType() == D3D12_COMMAND_LIST_TYPE_COPY;
+        const State target_state = is_copy_cmd_list ? State::Common : transfer_state;
+        if (GetState() == target_state)
             return transfer_cmd_list;
 
         TransferBarriers& transfer_barriers = transfer_operation == TransferOperation::Upload ? m_upload_barriers : m_read_back_barriers;
         transfer_cmd_list.RetainResource(*this);
 
-        // When upload command list has COPY type, before transitioning resource to CopyDest state prior copying,
-        // first it has to be transitioned to Common state with synchronization command list of DIRECT type.
-        // This is required due to DX12 limitation of using only copy-related resource barrier states in command lists of COPY type.
-        if (transfer_cmd_list.GetNativeCommandList().GetType() == D3D12_COMMAND_LIST_TYPE_COPY &&
-            SetState(State::Common, transfer_barriers.sync_barriers_ptr) && transfer_barriers.sync_barriers_ptr)
+        if (is_copy_cmd_list)
         {
-            Rhi::ICommandList& sync_cmd_list = GetContext().GetDefaultCommandKit(target_cmd_queue).GetListForEncoding(
-                static_cast<Rhi::CommandListId>(Rhi::CommandListPurpose::PreUploadSync));
-            sync_cmd_list.SetResourceBarriers(*transfer_barriers.sync_barriers_ptr);
+            // Transition to Common state is done with synchronization command list of DIRECT type,
+            // because command lists of COPY type do not support resource state transitions.
+            if (SetState(State::Common, transfer_barriers.sync_barriers_ptr) && transfer_barriers.sync_barriers_ptr)
+            {
+                Rhi::ICommandList& sync_cmd_list = GetContext().GetDefaultCommandKit(target_cmd_queue).GetListForEncoding(
+                    static_cast<Rhi::CommandListId>(Rhi::CommandListPurpose::PreUploadSync));
+                sync_cmd_list.SetResourceBarriers(*transfer_barriers.sync_barriers_ptr);
+            }
+            return transfer_cmd_list;
         }
 
         if (SetState(transfer_state, transfer_barriers.begin_barriers_ptr) && transfer_barriers.begin_barriers_ptr)

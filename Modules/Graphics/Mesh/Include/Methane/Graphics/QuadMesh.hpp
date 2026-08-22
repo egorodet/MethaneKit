@@ -100,10 +100,11 @@ private:
         Mesh::Position& vertex_position = BaseMeshT::template GetVertexField<Mesh::Position>(vertex, Mesh::VertexField::Position);
         switch (face_type)
         {
-        case FaceType::XY: vertex_position = Mesh::Position(pos_2d[0] * m_width, pos_2d[1] * m_height, m_depth_pos); break;
-        case FaceType::XZ: vertex_position = Mesh::Position(pos_2d[0] * m_width, m_depth_pos, pos_2d[1] * m_height); break;
-        case FaceType::YZ: vertex_position = Mesh::Position(m_depth_pos, pos_2d[1] * m_width, pos_2d[0] * m_height); break;
-        default:           META_UNEXPECTED(face_type);
+        using enum QuadFaceType;
+        case XY: vertex_position = Mesh::Position(pos_2d[0] * m_width, pos_2d[1] * m_height, m_depth_pos); break;
+        case XZ: vertex_position = Mesh::Position(pos_2d[0] * m_width, m_depth_pos, pos_2d[1] * m_height); break;
+        case YZ: vertex_position = Mesh::Position(m_depth_pos, pos_2d[1] * m_width, pos_2d[0] * m_height); break;
+        default: META_UNEXPECTED(face_type);
         }
     }
 
@@ -113,10 +114,11 @@ private:
         const float depth_norm      = m_depth_pos >= 0.F ? 1.F : -1.F;
         switch (face_type)
         {
-        case FaceType::XY: vertex_normal = Mesh::Normal(0.F, 0.F, depth_norm); break;
-        case FaceType::XZ: vertex_normal = Mesh::Normal(0.F, depth_norm, 0.F); break;
-        case FaceType::YZ: vertex_normal = Mesh::Normal(depth_norm, 0.F, 0.F); break;
-        default:           META_UNEXPECTED(face_type);
+        using enum QuadFaceType;
+        case XY: vertex_normal = Mesh::Normal(0.F, 0.F, depth_norm); break;
+        case XZ: vertex_normal = Mesh::Normal(0.F, depth_norm, 0.F); break;
+        case YZ: vertex_normal = Mesh::Normal(depth_norm, 0.F, 0.F); break;
+        default: META_UNEXPECTED(face_type);
         }
     }
 

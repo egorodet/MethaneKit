@@ -66,6 +66,13 @@ jobs:
   sonar_scan:
     name: ${{ matrix.name }}
 
+    permissions:
+      # NOTE: declaring this block sets every omitted scope to "none",
+      #       so "contents: read" has to be listed explicitly for actions/checkout.
+      contents: read
+      checks: write
+      pull-requests: write
+
     # Run sonar scan job only in context of the origin repository:
     # - Trigger on either "push" or "pull request" event for the origin repository owned branches
     # - Or trigger on "pull request target" event for external repositories to have access to secrets from origin repo context
@@ -119,13 +126,13 @@ jobs:
     steps:
       - name: Checkout pull-request merge commit from origin
         if: ${{ github.event_name != 'pull_request_target' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # checkout all history for all branches, as required by Sonar scanner
 
       - name: Checkout pull-request merge commit from fork
         if: ${{ github.event_name == 'pull_request_target' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: "${{ github.event.pull_request.merge_commit_sha }}"
           fetch-depth: 0 # checkout all history for all branches, as required by Sonar scanner
@@ -133,6 +140,10 @@ jobs:
       - name: Install Linux prerequisites
         if: ${{ runner.os == 'Linux' }}
         run: ./Build/Unix/CI/InstallLinuxPrerequisites.sh lcov
+
+      - name: Install MacOS prerequisites
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: ./Build/Unix/CI/InstallMacOsPrerequisites.sh
 
       - name: Install TestSpace
         if: ${{ github.event_name == 'push' }}
@@ -147,17 +158,14 @@ jobs:
           dotnet-version: 8.x
           dotnet-quality: 'ga'
 
-      - name: Install Sonar-Scanner
-        uses: sonarsource/sonarcloud-github-c-cpp@v3
-
       # Ninja build is required to generate compile commands file used by Sonar-Scanner
       - name: Install Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
+        uses: seanmiddleditch/gha-setup-ninja@v6
         with:
           version: 1.11.1
 
       - name: Initialize Externals Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Build/Output/ExternalsCache
           key: ExternalsCache-${{ matrix.config_preset }}-${{ hashFiles('Externals/*.cmake') }}
@@ -226,7 +234,7 @@ jobs:
 
       - name: Upload Code Coverage Cobertura Report
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MethaneKit_${{ matrix.name }}_CoverageResults
           path: Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/Cobertura.xml
@@ -290,23 +298,40 @@ jobs:
           action_fail: true
           action_fail_on_inconclusive: true
 
-      - name: Run Sonar Scanner
-        if: ${{ success() || failure() }}
-        shell: bash
+      - name: Run Sonar Scanner for Push
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
+        if: ${{ (success() || failure()) && github.event_name == 'push' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_ORGANIZATION: methane-powered
-          GITHUB_COMMIT_SHA: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.head.sha }}
-          GITHUB_PR_FLAG: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && 1 || 0 }}
-          GITHUB_PR_REPO: ${{ github.repository }}
-          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          GITHUB_PR_BASE: ${{ github.event.pull_request.base.ref }}
-        run: |
-            ./Build/Unix/CI/RunSonarScanner.sh "${{ matrix.sonar_project_key }}" \
-              "Build/Output/${{ matrix.config_preset }}/Build" \
-              "Build/Output/${{ matrix.config_preset }}/Install/Tests"
+          SONAR_HOST_URL: "https://sonarcloud.io"
+        with:
+          args: >
+            --define sonar.projectKey=${{ matrix.sonar_project_key }}
+            --define sonar.projectVersion=${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
+            --define sonar.cfamily.compile-commands=Build/Output/${{ matrix.config_preset }}/Build/compile_commands.json
+            --define sonar.testExecutionReportPaths=${{ env.test_results }}
+            --define sonar.coverageReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/SonarQube.xml
+            --define sonar.scm.revision=${{ github.sha }}
+
+      - name: Run Sonar Scanner for Pull-Request
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
+        if: ${{ (success() || failure()) && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: "https://sonarcloud.io"
+        with:
+          args: >
+            --define sonar.projectKey=${{ matrix.sonar_project_key }}
+            --define sonar.projectVersion=${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
+            --define sonar.cfamily.compile-commands=Build/Output/${{ matrix.config_preset }}/Build/compile_commands.json
+            --define sonar.testExecutionReportPaths=${{ env.test_results }}
+            --define sonar.coverageReportPaths=Build/Output/${{ matrix.config_preset }}/Install/Tests/Coverage/Report/SonarQube.xml
+            --define sonar.scm.revision=${{ github.event.pull_request.head.sha }}
+            --define sonar.pullrequest.provider=GitHub
+            --define sonar.pullrequest.github.repository=${{ github.repository }}
+            --define sonar.pullrequest.key=${{ github.event.pull_request.number }}
+            --define sonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+            --define sonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
 
       - name: Archive Scan Artifacts
         if: ${{ success() || failure() }}
@@ -316,7 +341,7 @@ jobs:
 
       - name: Upload Archived Scan Artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MethaneKit_${{ matrix.name }}_${{ env.METHANE_VERSION_MAJOR }}.${{ env.METHANE_VERSION_MINOR }}.${{ env.METHANE_VERSION_PATCH }}.${{ env.METHANE_VERSION_BUILD }}
           path: Build/Output/${{ matrix.config_preset }}/Install/MethaneKit_${{ matrix.name }}.7z
@@ -328,7 +353,7 @@ jobs:
 
       - name: Update Badge JSON
         if: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && always() }}
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: 96d788046ccd52b45b3354a99f8569c3

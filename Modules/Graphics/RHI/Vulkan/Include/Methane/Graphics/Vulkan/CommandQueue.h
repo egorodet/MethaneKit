@@ -69,9 +69,13 @@ public:
 
     void WaitForSemaphore(const vk::Semaphore& semaphore, vk::PipelineStageFlags stage_flags, const uint64_t* timeline_wait_value_ptr = nullptr);
     const WaitInfo& GetWaitBeforeExecuting() const noexcept { return m_wait_before_executing; }
-    const WaitInfo& GetWaitForExecutionCompleted() const;
+
     const WaitInfo& GetWaitForFrameExecutionCompleted(Data::Index frame_index) const;
     void ResetWaitForFrameExecution(Data::Index frame_index);
+
+#if 0 // Not used now, but may be needed in future
+    const WaitInfo& GetWaitForExecutionCompleted() const;
+#endif
 
     uint32_t GetNativeQueueFamilyIndex() const noexcept { return m_queue_family_index; }
     uint32_t GetNativeQueueIndex() const noexcept       { return m_queue_index; }
@@ -105,9 +109,12 @@ private:
     vk::PipelineStageFlags m_vk_supported_stage_flags;
     vk::AccessFlags        m_vk_supported_access_flags;
     WaitInfo               m_wait_before_executing;
-    mutable WaitInfo       m_wait_execution_completed;
     FrameWaitInfos         m_wait_frame_execution_completed;
     mutable TracyLockable(std::mutex, m_wait_frame_execution_completed_mutex);
+
+#if 0 // Not used now, but may be needed in future
+    mutable WaitInfo m_wait_execution_completed;
+#endif
 };
 
 } // namespace Methane::Graphics::Vulkan

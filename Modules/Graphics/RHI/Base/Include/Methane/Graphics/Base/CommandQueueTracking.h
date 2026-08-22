@@ -65,7 +65,7 @@ public:
     virtual void WaitUntilCompleted(const Opt<Data::Index>& frame_index = { }, uint32_t timeout_ms = 0U);
 
     Ptr<CommandListSet> GetLastExecutingCommandListSet() const;
-    const Ptr<Rhi::ITimestampQueryPool>& GetTimestampQueryPoolPtr() final;
+    Ptr<Rhi::ITimestampQueryPool> GetTimestampQueryPoolPtr() final;
 
 protected:
     using CommandListSetsQueue = std::queue<Ptr<CommandListSet>>;
@@ -98,20 +98,42 @@ protected:
 
 private:
     void InitializeTimestampQueryPool();
+    Ptr<Rhi::ITimestampQueryPool> GetInitializedTimestampQueryPoolPtr() const;
     void CompleteExecutionSafely();
     void WaitForExecution() noexcept;
+    bool IsFrontListExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
+    bool IsExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
 
-    const Ptr<CommandListSet>& GetNextExecutingCommandListSet() const;
+    Ptr<CommandListSet> PopNextExecutingCommandListSet();
+
+    template<typename CommandListSetFuncType>
+    void ProcessExecutingCommandListSet(const Opt<Data::Index>& frame_index, const CommandListSetFuncType& process_func)
+    {
+        std::scoped_lock lock_guard(m_executing_command_lists_mutex);
+        if (frame_index.has_value() && !IsExecutingOnFrameIndex(frame_index))
+            return;
+
+        while (!m_executing_command_lists.empty())
+        {
+            const bool is_frame_target = IsFrontListExecutingOnFrameIndex(frame_index);
+            process_func(*m_executing_command_lists.front());
+            m_executing_command_lists.pop();
+            if (frame_index.has_value() && is_frame_target)
+                break;
+        }
+        m_execution_waiting_condition_var.notify_one();
+    }
 
     CommandListSetsQueue                  m_executing_command_lists;
     mutable TracyLockable(std::mutex,     m_executing_command_lists_mutex);
     TracyLockable(std::mutex,             m_execution_waiting_mutex);
     std::condition_variable_any           m_execution_waiting_condition_var;
     std::atomic<bool>                     m_execution_waiting{ true };
-    std::thread                           m_execution_waiting_thread;
+    std::jthread                          m_execution_waiting_thread;
     std::exception_ptr                    m_execution_waiting_exception_ptr;
     std::atomic<bool>                     m_name_changed{ true };
     mutable Ptr<Rhi::ITimestampQueryPool> m_timestamp_query_pool_ptr;
+    mutable TracyLockable(std::mutex,     m_timestamp_query_pool_mutex);
 };
 
 } // namespace Methane::Graphics::Base

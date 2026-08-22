@@ -133,7 +133,7 @@ void SetXcbWindowAtomProperty(xcb_connection_t* connection, xcb_window_t window,
                               std::string_view property_atom_name, xcb_atom_enum_t property_type,
                               const std::vector<T>& values)
 {
-    const xcb_atom_t property_atom = GetXcbInternAtom(connection, property_atom_name.data());
+    const xcb_atom_t property_atom = GetXcbInternAtom(connection, property_atom_name);
     SetXcbWindowAtomProperty<T>(connection, window, property_atom, property_type, values);
 }
 
