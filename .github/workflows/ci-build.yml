@@ -295,7 +295,7 @@ jobs:
 
       - name: Update Badge JSON
         if: ${{ github.repository == env.ORIGIN_REPOSITORY && github.event_name != 'pull_request' && always() }}
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: 96d788046ccd52b45b3354a99f8569c3

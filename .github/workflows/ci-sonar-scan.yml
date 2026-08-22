@@ -353,7 +353,7 @@ jobs:
 
       - name: Update Badge JSON
         if: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && always() }}
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: 96d788046ccd52b45b3354a99f8569c3
