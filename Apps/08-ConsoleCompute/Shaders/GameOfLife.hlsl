@@ -25,6 +25,8 @@ Compute shader for Conway's Game of Life
 
 [[vk::push_constant]]
 ConstantBuffer<Constants> g_constants     : register(b0, META_ARG_CONSTANT);
+
+[[vk::image_format("r8ui")]]
 RWTexture2D<uint>         g_frame_texture : register(u0, META_ARG_MUTABLE);
 
 [numthreads(16, 16, 1)]

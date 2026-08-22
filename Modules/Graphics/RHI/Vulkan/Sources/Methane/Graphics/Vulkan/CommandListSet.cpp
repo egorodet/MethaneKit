@@ -104,7 +104,6 @@ CommandListSet::CommandListSet(const Refs<Rhi::ICommandList>& command_list_refs,
     : Base::CommandListSet(command_list_refs, frame_index_opt)
     , m_vk_wait_frame_buffer_rendering_on_stages(GetFrameBufferRenderingWaitStages(command_list_refs))
     , m_vk_device(GetVulkanCommandQueue().GetVulkanContext().GetVulkanDevice().GetNativeDevice())
-    , m_vk_unique_execution_completed_semaphore(m_vk_device.createSemaphoreUnique(vk::SemaphoreCreateInfo()))
     , m_vk_unique_execution_completed_fence(m_vk_device.createFenceUnique(vk::FenceCreateInfo()))
 {
     META_FUNCTION_TASK();
@@ -123,6 +122,34 @@ CommandListSet::CommandListSet(const Refs<Rhi::ICommandList>& command_list_refs,
     UpdateNativeDebugName();
 }
 
+vk::Semaphore CommandListSet::GetNativeExecutionCompletedSemaphore() const
+{
+    META_FUNCTION_TASK();
+    {
+        std::scoped_lock lock_guard(m_execution_completed_semaphore_mutex);
+        if (m_vk_unique_execution_completed_semaphore)
+            return m_vk_unique_execution_completed_semaphore.get();
+    }
+
+    // Debug name is built outside of the semaphore lock, so that it is never nested with the command lists mutex.
+    const std::string execution_completed_name = fmt::format("{} Execution Completed", GetCombinedName());
+
+    std::scoped_lock lock_guard(m_execution_completed_semaphore_mutex);
+    if (!m_vk_unique_execution_completed_semaphore)
+    {
+        m_vk_unique_execution_completed_semaphore = m_vk_device.createSemaphoreUnique(vk::SemaphoreCreateInfo());
+        SetVulkanObjectName(m_vk_device, m_vk_unique_execution_completed_semaphore.get(), execution_completed_name);
+    }
+    return m_vk_unique_execution_completed_semaphore.get();
+}
+
+vk::Semaphore CommandListSet::GetCreatedExecutionCompletedSemaphore() const
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_execution_completed_semaphore_mutex);
+    return m_vk_unique_execution_completed_semaphore.get();
+}
+
 void CommandListSet::Execute(const Rhi::ICommandList::CompletedCallback& completed_callback)
 {
     META_FUNCTION_TASK();
@@ -130,16 +157,12 @@ void CommandListSet::Execute(const Rhi::ICommandList::CompletedCallback& complet
 
     auto [vk_submit_info, vk_timeline_semaphore_submit_info] = GetSubmitInfo();
 
-    // FIXME: MoltenVK is crashing on Apple platforms on attempt to use submit info with timeline semaphore values,
-    //        while timeline semaphore extension is properly enabled in Device.cpp and this code works fine on Linux.
-#ifndef __APPLE__
     if (vk_timeline_semaphore_submit_info.waitSemaphoreValueCount ||
         vk_timeline_semaphore_submit_info.signalSemaphoreValueCount)
     {
         // Bind vk::TimelineSemaphoreSubmitInfo to the vk::SubmitInfo
         vk_submit_info.setPNext(&vk_timeline_semaphore_submit_info);
     }
-#endif
 
     std::scoped_lock fence_guard(m_execution_completed_fence_mutex);
     if (m_signalled_execution_completed_fence)
@@ -209,9 +232,16 @@ CommandListSet::SubmitInfo CommandListSet::GetSubmitInfo()
     submit_info.first = vk::SubmitInfo(
         vk_wait_semaphores,
         vk_wait_stages,
-        m_vk_command_buffers,
-        m_vk_unique_execution_completed_semaphore.get()
+        m_vk_command_buffers
     );
+
+    m_vk_signal_semaphores.clear();
+    if (const vk::Semaphore vk_execution_completed_semaphore = GetCreatedExecutionCompletedSemaphore();
+        vk_execution_completed_semaphore)
+    {
+        m_vk_signal_semaphores.push_back(vk_execution_completed_semaphore);
+        submit_info.first.setSignalSemaphores(m_vk_signal_semaphores);
+    }
 
     if (!vk_wait_values.empty())
     {
@@ -229,11 +259,15 @@ void CommandListSet::OnObjectNameChanged(Rhi::IObject& object, const std::string
     UpdateNativeDebugName();
 }
 
-void CommandListSet::UpdateNativeDebugName()
+void CommandListSet::UpdateNativeDebugName() const
 {
     META_FUNCTION_TASK();
     const std::string execution_completed_name = fmt::format("{} Execution Completed", GetCombinedName());
-    SetVulkanObjectName(m_vk_device, m_vk_unique_execution_completed_semaphore.get(), execution_completed_name);
+    if (const vk::Semaphore vk_execution_completed_semaphore = GetCreatedExecutionCompletedSemaphore();
+        vk_execution_completed_semaphore)
+    {
+        SetVulkanObjectName(m_vk_device, vk_execution_completed_semaphore, execution_completed_name);
+    }
     SetVulkanObjectName(m_vk_device, m_vk_unique_execution_completed_fence.get(), execution_completed_name);
 }
 

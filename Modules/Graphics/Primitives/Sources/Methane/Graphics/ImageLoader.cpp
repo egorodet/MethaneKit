@@ -39,9 +39,7 @@ by decoding them from popular image formats.
 
 #else // USE_OPEN_IMAGE_IO
 
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_NO_STDIO
-#include <stb_image.h>
+#include <Methane/StbImage.h>
 
 #endif // USE_OPEN_IMAGE_IO
 

@@ -120,7 +120,7 @@ public:
         {
         case Type::DirectX12: return tracy::GpuContextType::Direct3D12;
         case Type::Vulkan:    return tracy::GpuContextType::Vulkan;
-        case Type::Metal:     return tracy::GpuContextType::Invalid;
+        case Type::Metal:     return tracy::GpuContextType::Metal;
         case Type::Undefined: return tracy::GpuContextType::Invalid;
         default:              META_UNEXPECTED_RETURN(type, tracy::GpuContextType::Invalid);
         }
@@ -240,7 +240,7 @@ public:
     {
     }
 
-    tracy_force_inline void Begin(uint64_t src_location, bool is_allocated_location = false, int call_stack_depth = 0)
+    tracy_force_inline void Begin(uint64_t src_location, bool is_allocated_location, int call_stack_depth = 0)
     {
         if (!m_context_ptr)
             return;
@@ -295,7 +295,7 @@ public:
         const uint64_t source_location = tracy::Profiler::AllocSourceLocation(static_cast<uint32_t>(line),
                                                                               source_file.data(), source_file.length(),
                                                                               function.data(), function.length());
-        Begin(source_location, call_stack_depth);
+        Begin(source_location, true, call_stack_depth);
     }
 
     tracy_force_inline void Begin(std::string_view name, int line, std::string_view source_file, std::string_view function,  int call_stack_depth = 0)
@@ -397,25 +397,25 @@ private:
 #define TRACY_GPU_SCOPE_INIT(gpu_context) gpu_context
 
 #define TRACY_GPU_SCOPE_BEGIN_AT_LOCATION(gpu_scope, location_ptr) \
-    gpu_scope.Begin(location_ptr)
+    gpu_scope.Begin(location_ptr, false)
 
 #define TRACY_GPU_SCOPE_BEGIN_UNNAMED(gpu_scope) \
-    gpu_scope.Begin(__LINE__, __FUNCTION__,  __FILE__)
+    gpu_scope.Begin(__LINE__, __FILE__, __FUNCTION__)
 
 #define TRACY_GPU_SCOPE_BEGIN_NAMED(gpu_scope, name) \
-    gpu_scope.Begin(name, __LINE__, __FUNCTION__,  __FILE__)
+    gpu_scope.Begin(name, __LINE__, __FILE__, __FUNCTION__)
 
 #define TRACY_GPU_SCOPE_TRY_BEGIN_AT_LOCATION(gpu_scope, location_ptr) \
     if (gpu_scope.GetState() != Methane::Tracy::GpuScope::State::Begun) \
-        gpu_scope.Begin(location_ptr)
+        gpu_scope.Begin(location_ptr, false)
 
 #define TRACY_GPU_SCOPE_TRY_BEGIN_UNNAMED(gpu_scope) \
     if (gpu_scope.GetState() != Methane::Tracy::GpuScope::State::Begun) \
-        gpu_scope.Begin(__LINE__, __FUNCTION__,  __FILE__)
+        gpu_scope.Begin(__LINE__, __FILE__, __FUNCTION__)
 
 #define TRACY_GPU_SCOPE_TRY_BEGIN_NAMED(gpu_scope, name) \
     if (gpu_scope.GetState() != Methane::Tracy::GpuScope::State::Begun) \
-        gpu_scope.Begin(name, __LINE__, __FUNCTION__,  __FILE__)
+        gpu_scope.Begin(name, __LINE__, __FILE__, __FUNCTION__)
 
 #define TRACY_GPU_SCOPE_BEGIN(gpu_scope, name) \
     static const tracy::SourceLocationData TracyConcat(__tracy_gpu_source_location,__LINE__){ name, __FUNCTION__,  __FILE__, static_cast<uint32_t>(__LINE__), 0U }; \

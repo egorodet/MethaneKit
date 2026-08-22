@@ -7,6 +7,7 @@ get_module_dirs("Methane/Graphics/Metal")
 list(APPEND HEADERS
     ${INCLUDE_DIR}/Types.hh
     ${INCLUDE_DIR}/Device.hh
+    ${INCLUDE_DIR}/DebugMessages.hh
     ${INCLUDE_DIR}/System.hh
     ${INCLUDE_DIR}/Fence.hh
     ${INCLUDE_DIR}/IContext.h
@@ -45,6 +46,7 @@ list(APPEND HEADERS
 list(APPEND SOURCES
     ${SOURCES_DIR}/Types.mm
     ${SOURCES_DIR}/Device.mm
+    ${SOURCES_DIR}/DebugMessages.mm
     ${SOURCES_DIR}/System.mm
     ${SOURCES_DIR}/Fence.mm
     ${SOURCES_DIR}/RenderContext.mm

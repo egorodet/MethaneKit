@@ -149,6 +149,11 @@ const ResourceBarriers::NativePipelineBarrier& ResourceBarriers::GetNativePipeli
     META_FUNCTION_TASK();
     const uint32_t cmd_queue_family_index = target_cmd_queue.GetFamilyIndex();
 
+    // The per-queue-family barrier cache is filled lazily from a const method, so it is guarded with the barriers mutex.
+    // The mutex is recursive, which makes locking it here safe even though the callers are holding it already
+    // (see CommandList::SetResourceBarriers), and the returned reference stays valid while the caller holds the lock.
+    const auto lock_guard = Lock();
+
     const auto [barrier_it, is_added] = m_vk_barrier_by_queue_family.try_emplace(cmd_queue_family_index, m_vk_default_barrier);
     NativePipelineBarrier& native_pipeline_barrier = barrier_it->second;
     if (!is_added)
@@ -157,6 +162,18 @@ const ResourceBarriers::NativePipelineBarrier& ResourceBarriers::GetNativePipeli
     const vk::PipelineStageFlags vk_supported_stage_flags  = target_cmd_queue.GetNativeSupportedStageFlags();
     native_pipeline_barrier.vk_src_stage_mask &= vk_supported_stage_flags;
     native_pipeline_barrier.vk_dst_stage_mask &= vk_supported_stage_flags;
+
+    // Resource states may be mapped to the pipeline stages, which are not supported by the target command queue
+    // (i.e. transition to ShaderResource state executed on the Transfer queue), so the masked out stage flags may
+    // become empty, which is not allowed unless synchronization2 feature is enabled
+    // (VUID-vkCmdPipelineBarrier-srcStageMask-03937, VUID-vkCmdPipelineBarrier-dstStageMask-03937).
+    // TopOfPipe/BottomOfPipe stages are used in this case, since they are supported by all command queue types
+    // and do not add any extra synchronization to the pipeline barrier.
+    if (!native_pipeline_barrier.vk_src_stage_mask)
+        native_pipeline_barrier.vk_src_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
+
+    if (!native_pipeline_barrier.vk_dst_stage_mask)
+        native_pipeline_barrier.vk_dst_stage_mask = vk::PipelineStageFlagBits::eBottomOfPipe;
 
     const vk::AccessFlags vk_supported_access_flags = target_cmd_queue.GetNativeSupportedAccessFlags();
     UpdateNativeBarrierAccessFlags(native_pipeline_barrier.vk_buffer_memory_barriers, vk_supported_access_flags);

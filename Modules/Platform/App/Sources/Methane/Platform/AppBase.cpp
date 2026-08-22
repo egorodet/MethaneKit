@@ -159,6 +159,9 @@ AppBase::AppBase(const AppBase::Settings& settings)
 
     AddRectSizeOption(*this, "-w,--wnd-size", m_settings.size, "Window size in pixels or as ratio of desktop size", true);
     add_option("-f,--full-screen", m_settings.is_full_screen, "Full-screen mode");
+    add_flag("--print_debug_messages_to_console", m_print_debug_messages_to_console,
+             "Print debug messages, including graphics API validation errors and warnings, "
+             "to console output instead of platform debug output");
 
 #ifdef __APPLE__
     // When application is opened on MacOS with its Bundle,
@@ -191,6 +194,9 @@ int AppBase::Run(const RunArgs& args)
         std::cerr << "Failed to parse command line:" << std::endl; // NOSONAR
         return exit(e);
     }
+
+    // Redirection of the debug output to console has to be enabled before graphics API is initialized
+    SetPrintToConsoleEnabled(m_print_debug_messages_to_console);
     return 0;
 }
 

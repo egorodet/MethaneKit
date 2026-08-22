@@ -39,6 +39,7 @@ Vulkan implementation of the system interface.
 #include <ranges>
 #include <cassert>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 //#define VULKAN_VALIDATION_BEST_PRACTICES_ENABLED
@@ -67,19 +68,21 @@ static const std::string g_vk_validation_layer        = "VK_LAYER_KHRONOS_valida
 static const std::string g_vk_debug_utils_extension   = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 static const std::string g_vk_validation_extension    = VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME;
 
-static std::vector<char const*> GetEnabledLayers(const std::vector<std::string_view>& layers)
+// Layer and extension names are returned as owned strings, because Vulkan requires null-terminated C-strings,
+// while the input string views are not guaranteed to be null-terminated.
+static std::vector<std::string> GetEnabledLayers(const std::vector<std::string_view>& layers)
 {
     META_FUNCTION_TASK();
     const std::vector<vk::LayerProperties> layer_properties = vk::enumerateInstanceLayerProperties();
 
-    std::vector<const char*> enabled_layers;
+    std::vector<std::string> enabled_layers;
     enabled_layers.reserve(layers.size() );
     for (const std::string_view& layer : layers)
     {
         assert(std::ranges::find_if(layer_properties,
                             [layer](const vk::LayerProperties& lp) { return layer == lp.layerName; }
                             ) != layer_properties.end() );
-        enabled_layers.push_back(layer.data() );
+        enabled_layers.emplace_back(layer);
     }
 
 #ifndef NDEBUG
@@ -88,19 +91,19 @@ static std::vector<char const*> GetEnabledLayers(const std::vector<std::string_v
                      [](const vk::LayerProperties& lp) { return g_vk_validation_layer == lp.layerName; }
                      ) != layer_properties.end())
     {
-        enabled_layers.push_back(g_vk_validation_layer.c_str());
+        enabled_layers.push_back(g_vk_validation_layer);
     }
 #endif
 
     return enabled_layers;
 }
 
-static std::vector<const char*> GetEnabledExtensions(const std::vector<std::string_view>& extensions)
+static std::vector<std::string> GetEnabledExtensions(const std::vector<std::string_view>& extensions)
 {
     META_FUNCTION_TASK();
 
     const std::vector<vk::ExtensionProperties>& extension_properties = vk::enumerateInstanceExtensionProperties();
-    std::vector<const char*> enabled_extensions;
+    std::vector<std::string> enabled_extensions;
     enabled_extensions.reserve(extensions.size());
 
     for (const std::string_view& ext : extensions)
@@ -108,17 +111,17 @@ static std::vector<const char*> GetEnabledExtensions(const std::vector<std::stri
         assert(std::ranges::find_if(extension_properties,
                             [ext](const vk::ExtensionProperties& ep) { return ext == ep.extensionName; }
                             ) != extension_properties.end());
-        enabled_extensions.push_back(ext.data() );
+        enabled_extensions.emplace_back(ext);
     }
 
     const auto add_enabled_extension = [&extensions, &enabled_extensions, &extension_properties](const std::string& extension)
     {
-        if (std::ranges::find(extensions.begin(), extensions.end(), extension) == extensions.end() &&
+        if (std::ranges::find(extensions, extension) == extensions.end() &&
             std::ranges::find_if(extension_properties,
                          [&extension](const vk::ExtensionProperties& ep) { return extension == ep.extensionName; }
             ) != extension_properties.end())
         {
-            enabled_extensions.push_back(extension.c_str());
+            enabled_extensions.push_back(extension);
         }
     };
 
@@ -131,9 +134,22 @@ static std::vector<const char*> GetEnabledExtensions(const std::vector<std::stri
     return enabled_extensions;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
-                                                           VkDebugUtilsMessageTypeFlagsEXT             message_types,
-                                                           const VkDebugUtilsMessengerCallbackDataEXT* callback_data_ptr,
+// Returned pointers stay valid only while the passed strings vector is alive and unmodified.
+static std::vector<const char*> GetCStrings(const std::vector<std::string>& strings)
+{
+    META_FUNCTION_TASK();
+    std::vector<const char*> c_strings;
+    c_strings.reserve(strings.size());
+    for (const std::string& str : strings)
+    {
+        c_strings.push_back(str.c_str());
+    }
+    return c_strings;
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+                                                           vk::DebugUtilsMessageTypeFlagsEXT             message_types,
+                                                           const vk::DebugUtilsMessengerCallbackDataEXT* callback_data_ptr,
                                                            void* /*user_data_ptr*/) // NOSONAR
 {
     META_FUNCTION_TASK();
@@ -146,36 +162,21 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(VkDebugUtilsMessageSe
     if (callback_data_ptr->messageIdNumber == 648835635   || // UNASSIGNED-khronos-Validation-debug-build-warning-message
         callback_data_ptr->messageIdNumber == 767975156   || // UNASSIGNED-BestPractices-vkCreateInstance-specialise-extension
         callback_data_ptr->messageIdNumber == -400166253  || // UNASSIGNED-CoreValidation-DrawState-QueueForwardProgress
-        callback_data_ptr->messageIdNumber == -2117225404 || // VUID-vkCmdPipelineBarrier-dstStageMask-04996 (vkCmdPipelineBarrier(): .dstStageMask must not be 0 unless synchronization2 is enabled)
-        callback_data_ptr->messageIdNumber == 1630022081  || // VUID-vkCmdPipelineBarrier-dstStageMask-03937 (vkCmdPipelineBarrier(): .dstStageMask must not be 0 unless synchronization2 is enabled)
         callback_data_ptr->messageIdNumber == 1901485743)    // VUID-vkQueueSubmit-pCommandBuffers-00065     (VkSemaphore is being signaled by VkQueue 'Render Queue', but it was previously signaled by VkQueue 'Render Queue' and has not since been waited on)
         return VK_FALSE;
 
-#ifdef __APPLE__
-    // FIXME: disable warning on Apple "VkSemaphore is a timeline semaphore, but VkSubmitInfo does not include an instance of VkTimelineSemaphoreSubmitInfo",
-    //        which was introduced as the result of the workaround of crash on vk::Queue::submit with vk::SubmitInfo containing a pointer to vk::TimelineSemaphoreSubmitInfo
-    //        see Vulkan::CommandListSet::Execute() for more details
-    if (callback_data_ptr->messageIdNumber == -410448035 ||  // VUID-VkSubmitInfo-pWaitSemaphores-03239
-        callback_data_ptr->messageIdNumber == 1901485743)    // VUID-vkQueueSubmit-pCommandBuffers-00065
-        return VK_FALSE;
-#endif
-
     if (callback_data_ptr->messageIdNumber == 0 && (
         strstr(callback_data_ptr->pMessage, "loader_get_json: Failed to open JSON file") ||
-        strstr(callback_data_ptr->pMessage, "terminator_CreateInstance: Failed to CreateInstance in ICD")))
-        return VK_FALSE;
-
-    // Filter out validation error appeared due to missing HLSL extension for SPIRV bytecode, which can not be used because of bug in NVidia Windows drivers:
-    // vkCreateShaderModule(): The SPIR-V Extension (SPV_GOOGLE_hlsl_functionality1 | SPV_GOOGLE_user_type) was declared, but none of the requirements were met to use it.
-    if (callback_data_ptr->messageIdNumber  == -60244330  ||// VUID-VkShaderModuleCreateInfo-pCode-08742
-        (callback_data_ptr->messageIdNumber == 1028204675 && strstr(callback_data_ptr->pMessage, "SPV_GOOGLE_")) ) // VUID-VkShaderModuleCreateInfo-pCode-04147
+        strstr(callback_data_ptr->pMessage, "terminator_CreateInstance: Failed to CreateInstance in ICD") ||
+        strstr(callback_data_ptr->pMessage, "Removing layer") // because it is a duplicate of ...
+        ))
         return VK_FALSE;
 
 #endif // !NDEBUG
 
     std::stringstream ss;
-    ss << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(message_severity)) << " "
-       << vk::to_string(static_cast<vk::DebugUtilsMessageTypeFlagsEXT>(message_types)) << ":" << std::endl;
+    ss << vk::to_string(message_severity) << " "
+       << vk::to_string(message_types) << ":" << std::endl;
     ss << "\t- messageIdName:   " << callback_data_ptr->pMessageIdName << std::endl;
     ss << "\t- messageIdNumber: " << callback_data_ptr->messageIdNumber << std::endl;
     ss << "\t- message:         " << callback_data_ptr->pMessage << std::endl;
@@ -201,7 +202,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(VkDebugUtilsMessageSe
         for (uint32_t i = 0; i < callback_data_ptr->objectCount; i++)
         {
             ss << "\t\t- Object " << i << ":" << std::endl;
-            ss << "\t\t\t- objectType:   " << vk::to_string( static_cast<vk::ObjectType>(callback_data_ptr->pObjects[i].objectType)) << std::endl;
+            ss << "\t\t\t- objectType:   " << vk::to_string(callback_data_ptr->pObjects[i].objectType) << std::endl;
             ss << "\t\t\t- objectHandle: " << callback_data_ptr->pObjects[i].objectHandle << std::endl;
             if (callback_data_ptr->pObjects[i].pObjectName)
                 ss << "\t\t\t- objectName:   " << callback_data_ptr->pObjects[i].pObjectName << std::endl;
@@ -270,8 +271,11 @@ static vk::UniqueInstance CreateVulkanInstance(const VkDynamicLoader& vk_loader,
         vk_instance_create_flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
 
     constexpr uint32_t engine_version = METHANE_VERSION_MAJOR * 10 + METHANE_VERSION_MINOR;
-    const std::vector<const char*> enabled_layers     = GetEnabledLayers(layers);
-    const std::vector<const char*> enabled_extensions = GetEnabledExtensions(extensions);
+    // Name strings must outlive the instance create info, which keeps only the C-string pointers taken from them
+    const std::vector<std::string> enabled_layer_names     = GetEnabledLayers(layers);
+    const std::vector<std::string> enabled_extension_names = GetEnabledExtensions(extensions);
+    const std::vector<const char*> enabled_layers          = GetCStrings(enabled_layer_names);
+    const std::vector<const char*> enabled_extensions      = GetCStrings(enabled_extension_names);
     const vk::ApplicationInfo vk_app_info(g_vk_app_name.c_str(), 1, g_vk_engine_name.c_str(), engine_version, vk_api_version);
     const vk::InstanceCreateInfo vk_instance_create_info = MakeInstanceCreateInfoChain(vk_app_info, vk_instance_create_flags,
                                                                                        enabled_layers, enabled_extensions).get<vk::InstanceCreateInfo>();
@@ -314,8 +318,11 @@ const Ptrs<Rhi::IDevice>& System::UpdateGpuDevices(const Methane::Platform::AppE
 
     if (m_vk_unique_surface)
     {
-        // When devices are created, temporary surface can be released
-        m_vk_unique_surface.release();
+        // When devices are created, temporary surface can be destroyed.
+        // NOTE: reset() is used instead of release(), because release() only gives up the handle ownership
+        // without destroying the surface, which used to leak it and leave a second live VkSurfaceKHR
+        // bound to the application window for the whole process lifetime.
+        m_vk_unique_surface.reset();
     }
     return gpu_devices;
 }

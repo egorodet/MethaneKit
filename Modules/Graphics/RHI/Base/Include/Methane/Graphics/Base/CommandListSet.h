@@ -62,7 +62,7 @@ public:
     [[nodiscard]] const CommandList&       GetBaseCommandList(Data::Index index) const;
     [[nodiscard]] CommandQueue&            GetBaseCommandQueue()        { return m_base_refs.back().get().GetBaseCommandQueue(); }
     [[nodiscard]] const CommandQueue&      GetBaseCommandQueue() const  { return m_base_refs.back().get().GetBaseCommandQueue(); }
-    [[nodiscard]] const std::string&       GetCombinedName();
+    [[nodiscard]] std::string              GetCombinedName() const;
 
 protected:
     // IObjectCallback interface
@@ -73,7 +73,7 @@ private:
     Refs<CommandList>       m_base_refs;
     Ptrs<CommandList>       m_base_ptrs;
     Opt<Data::Index>        m_frame_index_opt;
-    std::string             m_combined_name;
+    mutable std::string     m_combined_name;
 
     mutable TracyLockable(std::mutex, m_command_lists_mutex);
     mutable std::atomic<bool> m_is_executing = false;

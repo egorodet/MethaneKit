@@ -28,11 +28,14 @@ DirectX 12 implementation of the device interface.
 #include <Methane/Graphics/DirectX/ErrorHandling.h>
 
 #include <Methane/Platform/Windows/Utils.h>
+#include <Methane/Platform/Utils.h>
 #include <Methane/Instrumentation.h>
 #include <Methane/Checks.hpp>
 
 #ifdef _DEBUG
 #include <dxgidebug.h>
+#include <directx/d3d12sdklayers.h>
+#include <sstream>
 
 // Uncomment to enable debugger breakpoint on DirectX debug warning or error
 // #define BREAK_ON_DIRECTX_DEBUG_LAYER_MESSAGE_ENABLED
@@ -64,12 +67,64 @@ bool IsSoftwareAdapterDxgi(IDXGIAdapter1& adapter)
 
 #ifdef _DEBUG
 
-static void ConfigureDeviceDebugFeature(const wrl::ComPtr<ID3D12Device>& device_cptr)
+static std::string_view GetMessageSeverityName(D3D12_MESSAGE_SEVERITY message_severity)
+{
+    META_FUNCTION_TASK();
+    switch (message_severity) // NOSONAR - do not use magic_enum, because message severity names are formatted for logging
+    {
+    case D3D12_MESSAGE_SEVERITY_CORRUPTION: return "Corruption";
+    case D3D12_MESSAGE_SEVERITY_ERROR:      return "Error";
+    case D3D12_MESSAGE_SEVERITY_WARNING:    return "Warning";
+    case D3D12_MESSAGE_SEVERITY_INFO:       return "Info";
+    case D3D12_MESSAGE_SEVERITY_MESSAGE:    return "Message";
+    default:                                return "Unknown";
+    }
+}
+
+static std::string_view GetMessageCategoryName(D3D12_MESSAGE_CATEGORY message_category)
+{
+    META_FUNCTION_TASK();
+    switch (message_category) // NOSONAR - do not use magic_enum, because message category names are formatted for logging
+    {
+    case D3D12_MESSAGE_CATEGORY_APPLICATION_DEFINED:   return "ApplicationDefined";
+    case D3D12_MESSAGE_CATEGORY_MISCELLANEOUS:         return "Miscellaneous";
+    case D3D12_MESSAGE_CATEGORY_INITIALIZATION:        return "Initialization";
+    case D3D12_MESSAGE_CATEGORY_CLEANUP:               return "Cleanup";
+    case D3D12_MESSAGE_CATEGORY_COMPILATION:           return "Compilation";
+    case D3D12_MESSAGE_CATEGORY_STATE_CREATION:        return "StateCreation";
+    case D3D12_MESSAGE_CATEGORY_STATE_SETTING:         return "StateSetting";
+    case D3D12_MESSAGE_CATEGORY_STATE_GETTING:         return "StateGetting";
+    case D3D12_MESSAGE_CATEGORY_RESOURCE_MANIPULATION: return "ResourceManipulation";
+    case D3D12_MESSAGE_CATEGORY_EXECUTION:             return "Execution";
+    case D3D12_MESSAGE_CATEGORY_SHADER:                return "Shader";
+    default:                                           return "Unknown";
+    }
+}
+
+// Debug layer message callback, which prints DirectX 12 validation messages to the platform debug output,
+// similar to the Vulkan debug utils messenger callback in Methane::Graphics::Vulkan::System
+static void __stdcall DebugMessageCallback(D3D12_MESSAGE_CATEGORY message_category,
+                                           D3D12_MESSAGE_SEVERITY message_severity,
+                                           D3D12_MESSAGE_ID message_id,
+                                           LPCSTR message_description,
+                                           void* /*context_ptr*/) // NOSONAR
+{
+    META_FUNCTION_TASK();
+    std::stringstream ss;
+    ss << GetMessageSeverityName(message_severity) << " "
+       << GetMessageCategoryName(message_category) << ":" << std::endl;
+    ss << "\t- messageIdNumber: " << static_cast<int32_t>(message_id) << std::endl;
+    ss << "\t- message:         " << (message_description ? message_description : "") << std::endl;
+
+    Methane::Platform::PrintToDebugOutput(ss.str());
+}
+
+static DWORD ConfigureDeviceDebugFeature(const wrl::ComPtr<ID3D12Device>& device_cptr)
 {
     META_FUNCTION_TASK();
     wrl::ComPtr<ID3D12InfoQueue> device_info_queue_cptr;
     if (!SUCCEEDED(device_cptr->QueryInterface(IID_PPV_ARGS(&device_info_queue_cptr))))
-        return;
+        return 0U;
 
 #ifdef BREAK_ON_DIRECTX_DEBUG_LAYER_MESSAGE_ENABLED
     device_info_queue_cptr->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
@@ -87,6 +142,39 @@ static void ConfigureDeviceDebugFeature(const wrl::ComPtr<ID3D12Device>& device_
     filter.DenyList.NumIDs  = static_cast<UINT>(skip_message_ids.size());
     filter.DenyList.pIDList = skip_message_ids.data();
     device_info_queue_cptr->AddStorageFilterEntries(&filter);
+
+    // ID3D12InfoQueue1 with message callback support is available since Windows 10 version 2004 (build 19041)
+    wrl::ComPtr<ID3D12InfoQueue1> device_info_queue_1_cptr;
+    if (!SUCCEEDED(device_info_queue_cptr.As(&device_info_queue_1_cptr)))
+    {
+        META_LOG("WARNING: DirectX 12 debug messages can not be printed to debug output, " \
+                 "because ID3D12InfoQueue1 interface is not supported by the system.");
+        return 0U;
+    }
+
+    DWORD message_callback_cookie = 0U;
+    if (!SUCCEEDED(device_info_queue_1_cptr->RegisterMessageCallback(&DebugMessageCallback,
+                                                                    D3D12_MESSAGE_CALLBACK_FLAG_NONE,
+                                                                    nullptr, &message_callback_cookie)))
+    {
+        META_LOG("WARNING: Failed to register DirectX 12 debug layer message callback.");
+        return 0U;
+    }
+
+    return message_callback_cookie;
+}
+
+static void ReleaseDeviceDebugFeature(const wrl::ComPtr<ID3D12Device>& device_cptr, DWORD message_callback_cookie)
+{
+    META_FUNCTION_TASK();
+    if (!device_cptr || !message_callback_cookie)
+        return;
+
+    wrl::ComPtr<ID3D12InfoQueue1> device_info_queue_1_cptr;
+    if (SUCCEEDED(device_cptr->QueryInterface(IID_PPV_ARGS(&device_info_queue_1_cptr))))
+    {
+        device_info_queue_1_cptr->UnregisterMessageCallback(message_callback_cookie);
+    }
 }
 
 #endif
@@ -164,14 +252,13 @@ const wrl::ComPtr<ID3D12Device>& Device::GetNativeDevice() const
     }
     else
     {
-        assert(false);
         META_LOG("WARNING: GPU instrumentation results may be unreliable because we failed to switch GPU to stable power state." \
                  "Enable Windows Developer Mode and try again.");
     }
 #endif
 
 #ifdef _DEBUG
-    ConfigureDeviceDebugFeature(m_device_cptr);
+    m_debug_message_callback_cookie = ConfigureDeviceDebugFeature(m_device_cptr);
 #endif
 
     return m_device_cptr;
@@ -180,6 +267,10 @@ const wrl::ComPtr<ID3D12Device>& Device::GetNativeDevice() const
 void Device::ReleaseNativeDevice()
 {
     META_FUNCTION_TASK();
+#ifdef _DEBUG
+    ReleaseDeviceDebugFeature(m_device_cptr, m_debug_message_callback_cookie);
+    m_debug_message_callback_cookie = 0U;
+#endif
     m_device_cptr.Reset();
 }
 

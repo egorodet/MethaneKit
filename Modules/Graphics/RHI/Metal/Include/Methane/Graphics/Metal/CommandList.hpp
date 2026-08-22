@@ -25,6 +25,7 @@ Metal base template implementation of the command list interface.
 
 #include "CommandQueue.hh"
 #include "CommandListDebugGroup.hh"
+#include "DebugMessages.hh"
 
 #include <Methane/Graphics/Base/CommandList.h>
 #include <Methane/Platform/Apple/Types.hh>
@@ -130,7 +131,8 @@ public:
         if (!m_is_cmd_buffer_enabled || !m_mtl_cmd_buffer)
             return;
 
-        [m_mtl_cmd_buffer addCompletedHandler:^(id<MTLCommandBuffer>) {
+        [m_mtl_cmd_buffer addCompletedHandler:^(id<MTLCommandBuffer> mtl_cmd_buffer) {
+            PrintCommandBufferDebugMessages(mtl_cmd_buffer);
             std::scoped_lock lock_guard(m_cmd_buffer_mutex);
             CommandListBaseT::Complete();
             m_mtl_cmd_buffer  = nil;
@@ -182,10 +184,7 @@ protected:
 
         if (!m_mtl_cmd_buffer)
         {
-            const id <MTLCommandQueue>& mtl_command_queue = GetMetalCommandQueue().GetNativeCommandQueue();
-            META_CHECK_NOT_NULL(mtl_command_queue);
-
-            m_mtl_cmd_buffer = [mtl_command_queue commandBuffer];
+            m_mtl_cmd_buffer = GetMetalCommandQueue().CreateNativeCommandBuffer();
             m_mtl_cmd_buffer.label = m_ns_name;
         }
 

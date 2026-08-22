@@ -40,18 +40,19 @@ jobs:
         include:
           - os: windows-latest
             name: "Win64_DX_CodeQL-Scan"
-            config_preset: "VS2022-Win64-DX-Scan"
-            build_preset: "VS2022-Win64-DX-Scan"
+            config_preset: "VS2026-Win64-DX-Scan"
+            build_preset: "VS2026-Win64-DX-Scan"
 
           - os: ubuntu-latest
             name: "Ubuntu_VK_CodeQL-Scan"
             config_preset: "Make-Lin-VK-Scan"
             build_preset: "Make-Lin-VK-Scan"
 
-          - os: macos-latest
-            name: "MacOS_MTL_CodeQL-Scan"
-            config_preset: "Xcode-Mac-MTL-Scan"
-            build_preset: "Xcode-Mac-MTL-Scan"
+          # FIXME: disable CodeQL scan on MacOS because of an issue with Metal Toolchain availability
+          #- os: macos-latest
+          #  name: "MacOS_MTL_CodeQL-Scan"
+          #  config_preset: "Xcode-Mac-MTL-Scan"
+          #  build_preset: "Xcode-Mac-MTL-Scan"
 
     runs-on: ${{ matrix.os }}
 
@@ -60,24 +61,32 @@ jobs:
 
     steps:
 
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        # No later step performs authenticated Git operations (SARIF is uploaded through the API),
+        # so the checkout token is not persisted into the local Git config.
+        persist-credentials: false
+
     - name: Install Linux prerequisites
       if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         sudo apt update
         sudo apt install xcb libx11-dev libx11-xcb-dev libxcb-sync-dev libxcb-randr0-dev
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Install MacOS prerequisites
+      if: ${{ matrix.os == 'macos-latest' }}
+      run: ./Build/Unix/CI/InstallMacOsPrerequisites.sh
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: cpp
         config-file: ./.github/codeql/codeql-config.yml
 
     - name: Initialize Externals Cache
       id: cache-externals
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       env:
         cache-name: cache-externals
       with:
@@ -91,7 +100,7 @@ jobs:
       run: cmake --build --preset ${{ matrix.build_preset }}
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         upload: false
         output: results
@@ -107,6 +116,6 @@ jobs:
         output: results/cpp-filtered.sarif
 
     - name: Upload Filtered CodeQL Results
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: results/cpp-filtered.sarif

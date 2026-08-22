@@ -1,7 +1,7 @@
 CPMAddPackage(
     NAME TaskFlow
     GITHUB_REPOSITORY MethanePowered/TaskFlow
-    VERSION 3.9.0.1
+    VERSION 4.1.0
     OPTIONS
         "TF_BUILD_BENCHMARKS OFF"
         "TF_BUILD_CUDA OFF"
@@ -19,8 +19,8 @@ if(MSVC)
         /wd4244 # conversion from '_Rep' to 'size_t', possible loss of data (taskflow/core/observer.hpp:884, Win32 only)
         /wd4127 # conditional expression is constant (taskflow/core/nonblocking_notifier.hpp:291,519)
     )
-else() # Clang or GCC
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     target_compile_options(Taskflow INTERFACE
-        -Wno-shorten-64-to-32 # implicit conversion loses integer precision: 'unsigned long' to 'int' (taskflow/core/observer.hpp:568:24)
+        -Wno-shorten-64-to-32 # implicit conversion loses integer precision
     )
 endif()

@@ -151,12 +151,28 @@ ProgramBindings::ProgramBindings(const ProgramBindings& other_program_bindings,
         META_CHECK_NOT_NULL(vk_mutable_desc_set_layout);
         vk::DescriptorSet copy_mutable_descriptor_set = program.GetVulkanContext().GetVulkanDescriptorManager().AllocDescriptorSet(vk_mutable_desc_set_layout);
 
-        // Copy descriptors from original to new mutable descriptor set
-        const vk::Device& vk_device = program.GetVulkanContext().GetVulkanDevice().GetNativeDevice();
+        // Copy descriptors from original to new mutable descriptor set.
+        // Copy is done separately for each layout binding, because a single copy with the flat descriptor count
+        // would run out of the first binding array bounds and would require all crossed bindings to be identical.
         const Program::DescriptorSetLayoutInfo& mutable_desc_set_layout_info = program.GetDescriptorSetLayoutInfo(Rhi::ProgramArgumentAccessType::Mutable);
-        vk_device.updateDescriptorSets({}, {
-            vk::CopyDescriptorSet(other_program_bindings.m_descriptor_sets.back(), {}, {}, copy_mutable_descriptor_set, {}, mutable_desc_set_layout_info.descriptors_count)
-        });
+        const vk::DescriptorSet& vk_source_descriptor_set = other_program_bindings.m_descriptor_sets.back();
+        std::vector<vk::CopyDescriptorSet> vk_copy_descriptor_sets;
+        vk_copy_descriptor_sets.reserve(mutable_desc_set_layout_info.bindings.size());
+        for (const vk::DescriptorSetLayoutBinding& vk_layout_binding : mutable_desc_set_layout_info.bindings)
+        {
+            if (!vk_layout_binding.descriptorCount)
+                continue;
+
+            vk_copy_descriptor_sets.emplace_back(vk_source_descriptor_set,      vk_layout_binding.binding, 0U,
+                                                 copy_mutable_descriptor_set,   vk_layout_binding.binding, 0U,
+                                                 vk_layout_binding.descriptorCount);
+        }
+
+        if (!vk_copy_descriptor_sets.empty())
+        {
+            const vk::Device& vk_device = program.GetVulkanContext().GetVulkanDevice().GetNativeDevice();
+            vk_device.updateDescriptorSets({}, vk_copy_descriptor_sets);
+        }
 
         vk::DescriptorSet& vk_mutable_descriptor_set = m_descriptor_sets.back();
         vk_mutable_descriptor_set = copy_mutable_descriptor_set;

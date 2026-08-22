@@ -30,6 +30,7 @@ Vulkan implementation of the render context interface.
 #include <Methane/Data/Emitter.hpp>
 
 #include <deque>
+#include <mutex>
 #include <vulkan/vulkan.hpp>
 
 #ifdef __APPLE__
@@ -91,28 +92,49 @@ public:
     const vk::Semaphore&    GetNativeFrameImageAvailableSemaphore(uint32_t frame_buffer_index) const;
     const vk::Semaphore&    GetNativeFrameImageAvailableSemaphore(Opt<uint32_t> frame_buffer_index_opt) const;
 
-    void DeferredRelease(vk::UniquePipeline&& pipeline) const { m_vk_deferred_release_pipelines.emplace_back(std::move(pipeline)); }
+    void DeferredRelease(vk::UniquePipeline&& pipeline) const
+    {
+        std::scoped_lock lock_guard(m_vk_deferred_release_pipelines_mutex);
+        m_vk_deferred_release_pipelines.emplace_back(std::move(pipeline));
+    }
 
 protected:
     // Base::RenderContext overrides
     uint32_t GetNextFrameBufferIndex() override;
 
 private:
+    struct NativeSwapchain
+    {
+        vk::UniqueSwapchainKHR vk_unique_swapchain;
+        vk::Format             format;
+        vk::Extent2D           extent;
+        uint32_t               requested_image_count;
+    };
+
     vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& available_formats) const;
     vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) const;
     vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surface_caps) const;
+
+    // Creates a swap-chain for the window surface of this context.
+    // Present mode is chosen by the context V-Sync setting, unless it is explicitly forced with the argument.
+    [[nodiscard]] NativeSwapchain CreateNativeSwapchain(Opt<vk::PresentModeKHR> forced_present_mode_opt = {}) const;
+
     void InitializeNativeSwapchain();
+    void PrimeSurfacePresentation();
     void ReleaseNativeSwapchainResources();
+    void DestroyNativeSwapchainResources();
     void ResetNativeSwapchain();
     void ResetNativeObjectNames() const;
+    bool TryRelease();
 
     struct FrameSync
     {
         vk::UniqueSemaphore vk_unique_semaphore;
-        vk::UniqueFence     vk_unique_fence;
-        bool                is_submitted = false;
 
-        void Wait(const vk::Device& vk_device);
+        // Frame buffer index of the render submission which is going to wait for this semaphore,
+        // used to make sure that the GPU has finished waiting for it before acquireNextImageKHR
+        // signals it again (VUID-vkAcquireNextImageKHR-semaphore-01779).
+        Opt<Data::Index>    consumer_frame_index;
     };
 
 #ifdef __APPLE__
@@ -121,7 +143,7 @@ private:
 #endif
 
     const Methane::Platform::AppEnvironment m_app_env;
-    const vk::Device                        m_vk_device;
+    vk::Device                              m_vk_device;
     vk::UniqueSurfaceKHR                    m_vk_unique_surface;
     vk::UniqueSwapchainKHR                  m_vk_unique_swapchain;
     vk::Format                              m_vk_frame_format;
@@ -129,7 +151,11 @@ private:
     std::vector<vk::Image>                  m_vk_frame_images;
     std::vector<FrameSync>                  m_frame_sync_pool;
     std::vector<vk::Semaphore>              m_vk_frame_image_available_semaphores;
+
+    // Pipelines are deferred for release from the render states, which may be recreated from any thread,
+    // while the deferred release queue is cleared in WaitForGpu(), so it is guarded with the mutex.
     mutable std::deque<vk::UniquePipeline>  m_vk_deferred_release_pipelines;
+    mutable TracyLockable(std::mutex,       m_vk_deferred_release_pipelines_mutex);
 };
 
 } // namespace Methane::Graphics::Vulkan

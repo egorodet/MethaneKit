@@ -43,10 +43,16 @@ Vulkan implementation of the render context interface.
 #include <magic_enum/magic_enum.hpp>
 #include <sstream>
 #include <ranges>
+#include <algorithm>
 #include <cassert>
 
 namespace Methane::Graphics::Vulkan
 {
+
+static constexpr uint64_t g_image_acquire_timeout_ns = 1000000000ULL; // 1 second
+
+// Maximum number of vkAcquireNextImageKHR retries on timeout or after a swapchain reset.
+static constexpr uint32_t g_max_image_acquire_attempts = 3U;
 
 #ifndef __APPLE__
 
@@ -58,22 +64,13 @@ RenderContext::RenderContext(const Methane::Platform::AppEnvironment& app_env, D
     , m_vk_unique_surface(Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), app_env))
 { }
 
-#endif // #ifndef __APPLE__
-
 RenderContext::~RenderContext()
 {
     META_FUNCTION_TASK();
-    try
-    {
-        RenderContext::Release();
-    }
-    catch(const std::exception& e)
-    {
-        META_UNUSED(e);
-        META_LOG("WARNING: Unexpected error during Query destruction: {}", e.what());
-        assert(false);
-    }
+    TryRelease();
 }
+
+#endif // #ifndef __APPLE__
 
 [[nodiscard]] Ptr<Rhi::ITexture> RenderContext::CreateTexture(const Rhi::TextureSettings& settings) const
 {
@@ -99,8 +96,35 @@ Ptr<Rhi::IRenderPattern> RenderContext::CreateRenderPattern(const Rhi::RenderPat
 void RenderContext::Release()
 {
     META_FUNCTION_TASK();
-    ReleaseNativeSwapchainResources();
+
+    // GPU has to be idle before anything is destroyed, and it is waited for while the context
+    // still owns its command queues, which are released by the base context implementation below.
+    WaitForGpu(WaitFor::RenderComplete);
+
+    // Base context release emits IContextCallback::OnContextReleased, in response to which the application
+    // destroys frame-buffer textures along with the image views and framebuffers created from swap-chain images.
     Context<Base::RenderContext>::Release();
+
+    // Presentable images are owned by the swap-chain, so it may be destroyed only after all objects
+    // created from those images have been destroyed by the context release above.
+    DestroyNativeSwapchainResources();
+}
+
+bool RenderContext::TryRelease()
+{
+    META_FUNCTION_TASK();
+    try
+    {
+        RenderContext::Release();
+    }
+    catch(const std::exception& e)
+    {
+        META_UNUSED(e);
+        META_LOG("WARNING: Unexpected error during RenderContext release: {}", e.what());
+        assert(false);
+        return false;
+    }
+    return true;
 }
 
 bool RenderContext::SetName(std::string_view name)
@@ -117,6 +141,21 @@ void RenderContext::Initialize(Base::Device& device, bool is_callback_emitted)
 {
     META_FUNCTION_TASK();
     SetDevice(device);
+
+    // Context can be re-initialized with another device when the rendering device is switched in runtime,
+    // so the cached native device handle has to be updated before creating any device-owned objects below,
+    // otherwise the swap-chain and frame semaphores would be created with the previously used device.
+    const bool is_device_changed = static_cast<Device&>(device).GetNativeDevice() != m_vk_device;
+    m_vk_device = static_cast<Device&>(device).GetNativeDevice();
+
+    // NOTE: VULKAN_HPP_DEFAULT_DISPATCHER is intentionally NOT specialized with this render context device,
+    //       see the detailed explanation in Device::Initialize(). The global dispatcher keeps the
+    //       instance-level loader trampolines, which dispatch correctly on multi-GPU systems.
+    if (is_device_changed)
+    {
+        PrimeSurfacePresentation();
+    }
+
     InitializeNativeSwapchain();
     Context<Base::RenderContext>::Initialize(device, is_callback_emitted);
 }
@@ -139,6 +178,7 @@ void RenderContext::WaitForGpu(WaitFor wait_for)
 
     GetVulkanDefaultCommandQueue(cl_type).WaitUntilCompleted(frame_buffer_index);
 
+    std::scoped_lock lock_guard(m_vk_deferred_release_pipelines_mutex);
     m_vk_deferred_release_pipelines.clear();
 }
 
@@ -249,45 +289,78 @@ const vk::Semaphore& RenderContext::GetNativeFrameImageAvailableSemaphore(Opt<ui
 uint32_t RenderContext::GetNextFrameBufferIndex()
 {
     META_FUNCTION_TASK();
-    const uint32_t frame_sync_index = Base::RenderContext::GetFrameIndex() % m_frame_sync_pool.size();
-    const uint32_t await_sync_index = (frame_sync_index + 1U) % m_frame_sync_pool.size();
-
-    // Wait for the rendering of the frame [N - FBC] (where FBC is Frame Buffers Count) to be completed,
-    // which is accomplished by waiting for the next frame image availability [N - FBC - 1]
-    // or simply [N + 1] in the FBC ring buffer
-    m_frame_sync_pool[await_sync_index].Wait(m_vk_device);
-
-    FrameSync& curr_frame_sync = m_frame_sync_pool[frame_sync_index];
-    if (curr_frame_sync.is_submitted)
-        return GetFrameBufferIndex();
-
-    // Acquire next frame image with signalling GPU semaphore and CPU fence when image will be acquired
-    uint32_t   next_image_index = 0;
-    switch (const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(), std::numeric_limits<uint64_t>::max(),
-                                                                                    curr_frame_sync.vk_unique_semaphore.get(),
-                                                                                    curr_frame_sync.vk_unique_fence.get(),
-                                                                                    &next_image_index);
-            image_acquire_result)
+    // Acquire next frame image with signalling GPU semaphore when image will be acquired
+    uint32_t next_image_index = 0;
+    uint32_t frame_sync_index = 0;
+    for (uint32_t acquire_attempt = 0U;; ++acquire_attempt)
     {
-    using enum vk::Result;
-    case eSuccess:
-    case eSuboptimalKHR:
-        break;
+        // NOTE: frame-sync pool is destroyed and re-created together with the swapchain, so the ring slot
+        // has to be taken anew on every attempt, because a swapchain reset done in the retry branches below
+        // invalidates all references to the pool elements taken before it.
+        frame_sync_index = Base::RenderContext::GetFrameIndex() % m_frame_sync_pool.size();
+        FrameSync& curr_frame_sync = m_frame_sync_pool[frame_sync_index];
 
-    case eErrorSurfaceLostKHR:
-        m_vk_unique_surface.release();
-        m_vk_unique_surface = Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), m_app_env);
-        ResetNativeSwapchain();
-        break;
+        // The image-available semaphore in this ring slot was last signalled for the render submission
+        // targeting frame 'consumer_frame_index'. Vulkan requires that a binary semaphore passed to
+        // acquireNextImageKHR must not have any pending signal or wait operations, so we have to wait
+        // until the GPU has actually finished that submission (not just until it was acquired) before
+        // it can be safely signalled again here (VUID-vkAcquireNextImageKHR-semaphore-01779).
+        if (curr_frame_sync.consumer_frame_index.has_value())
+        {
+            GetVulkanDefaultCommandQueue(Rhi::CommandListType::Render).WaitUntilCompleted(curr_frame_sync.consumer_frame_index);
+        }
 
-            default:
-        throw InvalidArgumentException<vk::Result>(std::source_location::current(), "image_acquire_result",
-                                                   image_acquire_result, "failed to acquire next image");
+        const vk::Result image_acquire_result = m_vk_device.acquireNextImageKHR(GetNativeSwapchain(),
+                                                                               g_image_acquire_timeout_ns,
+                                                                               curr_frame_sync.vk_unique_semaphore.get(),
+                                                                               {},
+                                                                               &next_image_index);
+        bool retry_acquire = false;
+        switch (image_acquire_result)
+        {
+        using enum vk::Result;
+        case eSuccess:
+        case eSuboptimalKHR:
+            break;
+
+        case eErrorSurfaceLostKHR:
+            // NOTE: the swapchain created for the lost surface has to be destroyed before the surface itself
+            // (VUID-vkDestroySurfaceKHR-surface-01266), and reset() is used instead of release() used here before,
+            // which only gave up the handle ownership, leaking the surface object and leaving it bound to the window.
+            // Swapchain resources are released and re-initialized directly instead of calling ResetNativeSwapchain(),
+            // because the latter calls UpdateFrameBufferIndex(), which would re-enter this function recursively.
+            ReleaseNativeSwapchainResources();
+            m_vk_unique_surface.reset();
+            m_vk_unique_surface = Platform::CreateVulkanSurfaceForWindow(static_cast<System&>(Rhi::ISystem::Get()).GetNativeInstance(), m_app_env);
+            InitializeNativeSwapchain();
+            // Image was not acquired, and it has to be taken from the newly created swapchain.
+            retry_acquire = true;
+            break;
+
+        case eTimeout:
+        case eNotReady:
+            // No presentable image became available in time. Vulkan guarantees that the semaphore is left
+            // untouched in this case (VUID-vkAcquireNextImageKHR-semaphore-01780), so it can be reused as is.
+            retry_acquire = true;
+            break;
+
+        default:
+            throw InvalidArgumentException<vk::Result>(std::source_location::current(), "image_acquire_result",
+                                                      image_acquire_result, "failed to acquire next image");
+        }
+
+        if (!retry_acquire)
+            break;
+
+        if (acquire_attempt >= g_max_image_acquire_attempts)
+            throw InvalidArgumentException<vk::Result>(std::source_location::current(), "image_acquire_result",
+                                                      image_acquire_result, "failed to acquire next image in several attempts");
     }
 
+    FrameSync& curr_frame_sync = m_frame_sync_pool[frame_sync_index];
     const uint32_t next_frame_index = next_image_index % Base::RenderContext::GetSettings().frame_buffers_count;
     m_vk_frame_image_available_semaphores[next_frame_index] = curr_frame_sync.vk_unique_semaphore.get();
-    curr_frame_sync.is_submitted = true;
+    curr_frame_sync.consumer_frame_index = next_frame_index;
 
     return next_frame_index;
 }
@@ -313,6 +386,14 @@ vk::SurfaceFormatKHR RenderContext::ChooseSwapSurfaceFormat(const std::vector<vk
 vk::PresentModeKHR RenderContext::ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) const
 {
     META_FUNCTION_TASK();
+    // NOTE: Mailbox is preferred over Immediate when V-Sync is disabled, because it presents the most recent
+    //       frame without tearing. On hybrid-GPU systems this has a known driver-side cost: after the rendering
+    //       device has been switched in runtime and another physical device has presented to this window surface,
+    //       Mailbox presentation is demoted to a path limited to twice the display refresh rate, and nothing
+    //       restores it (swap-chain re-creation, context reset, surface re-creation and window re-positioning were
+    //       all measured to have no effect), while Immediate keeps presenting at the full rate. This is a frame
+    //       rate difference only: frames rendered above the refresh rate are discarded by Mailbox in any case,
+    //       so the displayed image is the same, and tearing-free presentation is kept as the default behavior.
     const std::vector<vk::PresentModeKHR> required_present_modes = GetSettings().vsync_enabled
         ? std::vector<vk::PresentModeKHR>{ vk::PresentModeKHR::eFifoRelaxed, vk::PresentModeKHR::eFifo }
         : std::vector<vk::PresentModeKHR>{ vk::PresentModeKHR::eMailbox,     vk::PresentModeKHR::eImmediate };
@@ -350,14 +431,19 @@ vk::Extent2D RenderContext::ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& s
     if (surface_caps.currentExtent.width != std::numeric_limits<uint32_t>::max())
         return surface_caps.currentExtent;
 
-    const FrameSize& frame_size = GetSettings().frame_size;
+    const FrameSize&    frame_size = GetSettings().frame_size;
+    const vk::Extent2D& min_extent = surface_caps.minImageExtent;
+    const vk::Extent2D& max_extent = surface_caps.maxImageExtent;
+
+    // Upper bounds are taken as max(min, max) to keep std::clamp well-defined
+    // in case of a driver reporting inconsistent surface capabilities.
     return vk::Extent2D(
-        std::max(surface_caps.minImageExtent.width,  std::min(surface_caps.minImageExtent.width,  frame_size.GetWidth())),
-        std::max(surface_caps.minImageExtent.height, std::min(surface_caps.minImageExtent.height, frame_size.GetHeight()))
+        std::clamp(frame_size.GetWidth(),  min_extent.width,  std::max(min_extent.width,  max_extent.width)),
+        std::clamp(frame_size.GetHeight(), min_extent.height, std::max(min_extent.height, max_extent.height))
     );
 }
 
-void RenderContext::InitializeNativeSwapchain()
+RenderContext::NativeSwapchain RenderContext::CreateNativeSwapchain(Opt<vk::PresentModeKHR> forced_present_mode_opt) const
 {
     META_FUNCTION_TASK();
 
@@ -369,8 +455,10 @@ void RenderContext::InitializeNativeSwapchain()
 
     const Device::SwapChainSupport swap_chain_support  = GetVulkanDevice().GetSwapChainSupportForSurface(GetNativeSurface());
     const vk::SurfaceFormatKHR     swap_surface_format = ChooseSwapSurfaceFormat(swap_chain_support.formats);
-    const vk::PresentModeKHR       swap_present_mode   = ChooseSwapPresentMode(swap_chain_support.present_modes);
     const vk::Extent2D             swap_extent         = ChooseSwapExtent(swap_chain_support.capabilities);
+    const vk::PresentModeKHR       swap_present_mode   = forced_present_mode_opt // NOSONAR - can not use value_or here
+                                                       ? *forced_present_mode_opt
+                                                       : ChooseSwapPresentMode(swap_chain_support.present_modes);
 
     uint32_t image_count = std::max(swap_chain_support.capabilities.minImageCount, GetSettings().frame_buffers_count);
     if (swap_chain_support.capabilities.maxImageCount && image_count > swap_chain_support.capabilities.maxImageCount)
@@ -378,26 +466,45 @@ void RenderContext::InitializeNativeSwapchain()
         image_count = swap_chain_support.capabilities.maxImageCount;
     }
 
-    m_vk_unique_swapchain = m_vk_device.createSwapchainKHRUnique(
-        vk::SwapchainCreateInfoKHR(
-            vk::SwapchainCreateFlagsKHR(),
-            GetNativeSurface(),
-            image_count,
-            swap_surface_format.format,
-            swap_surface_format.colorSpace,
-            swap_extent,
-            1,
-            vk::ImageUsageFlagBits::eColorAttachment,
-            vk::SharingMode::eExclusive, 0, nullptr,
-            swap_chain_support.capabilities.currentTransform,
-            vk::CompositeAlphaFlagBitsKHR::eOpaque,
-            swap_present_mode,
-            true
-        )
-    );
-    m_vk_frame_images = m_vk_device.getSwapchainImagesKHR(GetNativeSwapchain());
-    m_vk_frame_format = swap_surface_format.format;
-    m_vk_frame_extent = swap_extent;
+    return NativeSwapchain{
+        m_vk_device.createSwapchainKHRUnique(
+            vk::SwapchainCreateInfoKHR(
+                vk::SwapchainCreateFlagsKHR(),
+                GetNativeSurface(),
+                image_count,
+                swap_surface_format.format,
+                swap_surface_format.colorSpace,
+                swap_extent,
+                1,
+                vk::ImageUsageFlagBits::eColorAttachment,
+                vk::SharingMode::eExclusive, 0, nullptr,
+                swap_chain_support.capabilities.currentTransform,
+                vk::CompositeAlphaFlagBitsKHR::eOpaque,
+                swap_present_mode,
+                true
+            )
+        ),
+        swap_surface_format.format,
+        swap_extent,
+        image_count
+    };
+}
+
+void RenderContext::InitializeNativeSwapchain()
+{
+    META_FUNCTION_TASK();
+
+    NativeSwapchain native_swapchain = CreateNativeSwapchain();
+    m_vk_unique_swapchain = std::move(native_swapchain.vk_unique_swapchain);
+    m_vk_frame_format     = native_swapchain.format;
+    m_vk_frame_extent     = native_swapchain.extent;
+    m_vk_frame_images     = m_vk_device.getSwapchainImagesKHR(GetNativeSwapchain());
+
+    // Guard against a swapchain which reports no images at all: frame buffers count would be invalidated to zero,
+    // leaving the context without any frame synchronization semaphores and failing in an obscure way much later.
+    META_CHECK_NOT_ZERO_DESCR(m_vk_frame_images.size(),
+                              "swapchain was created with {} images, but no swapchain images were returned by the device",
+                              native_swapchain.requested_image_count);
 
     if (m_vk_frame_images.size() != GetSettings().frame_buffers_count)
         InvalidateFrameBuffersCount(static_cast<uint32_t>(m_vk_frame_images.size()));
@@ -410,10 +517,7 @@ void RenderContext::InitializeNativeSwapchain()
         if (!frame_sync.vk_unique_semaphore)
             frame_sync.vk_unique_semaphore = m_vk_device.createSemaphoreUnique(vk::SemaphoreCreateInfo());
 
-        if (!frame_sync.vk_unique_fence)
-            frame_sync.vk_unique_fence = m_vk_device.createFenceUnique(vk::FenceCreateInfo());
-
-        frame_sync.is_submitted = false;
+        frame_sync.consumer_frame_index.reset();
     }
 
     // Image available semaphores are assigned from frame semaphores in GetNextFrameBufferIndex
@@ -433,16 +537,34 @@ void RenderContext::InitializeNativeSwapchain()
     Data::Emitter<IRenderContextCallback>::Emit(&IRenderContextCallback::OnRenderContextSwapchainChanged, std::ref(*this));
 }
 
+void RenderContext::PrimeSurfacePresentation()
+{
+    META_FUNCTION_TASK();
+
+    // Workaround for a presentation failure observed on hybrid-GPU systems when the rendering device is
+    // switched in runtime: once a swap-chain of another physical device has presented to this window surface,
+    // a newly created swap-chain with a non-FIFO present mode (Mailbox or Immediate, used when V-Sync is off)
+    // presents frames with VK_SUCCESS, but the window content is never updated on screen again.
+    // Creating a throw-away FIFO swap-chain for the surface resets that state in the presentation engine,
+    // after which the swap-chain created with the requested present mode presents normally.
+    // FIFO present mode is guaranteed by the Vulkan specification to be supported by any presentable surface.
+    // Priming swap-chain is destroyed immediately when this unique handle goes out of scope.
+    const NativeSwapchain priming_swapchain = CreateNativeSwapchain(vk::PresentModeKHR::eFifo);
+    META_UNUSED(priming_swapchain);
+}
+
 void RenderContext::ReleaseNativeSwapchainResources()
 {
     META_FUNCTION_TASK();
+    // Waiting for GPU idle guarantees that all frame-sync semaphores are no longer in use
     WaitForGpu(WaitFor::RenderComplete);
 
-    for(FrameSync& frame_sync : m_frame_sync_pool)
-    {
-        frame_sync.Wait(m_vk_device);
-    }
+    DestroyNativeSwapchainResources();
+}
 
+void RenderContext::DestroyNativeSwapchainResources()
+{
+    META_FUNCTION_TASK();
     m_frame_sync_pool.clear();
     m_vk_frame_image_available_semaphores.clear();
     m_vk_frame_images.clear();
@@ -471,32 +593,12 @@ void RenderContext::ResetNativeObjectNames() const
     uint32_t frame_index = 0u;
     for (const FrameSync& frame_sync : m_frame_sync_pool)
     {
-        if (!frame_sync.vk_unique_semaphore)
+        if (frame_sync.vk_unique_semaphore)
             SetVulkanObjectName(m_vk_device, frame_sync.vk_unique_semaphore.get(),
                                 fmt::format("{} Frame {} Image Available Semaphore", context_name, frame_index));
 
-        if (!frame_sync.vk_unique_fence)
-            SetVulkanObjectName(m_vk_device, frame_sync.vk_unique_fence.get(),
-                                fmt::format("{} Frame {} Image Available Fence", context_name, frame_index));
-
         frame_index++;
     }
-}
-
-void RenderContext::FrameSync::Wait(const vk::Device& vk_device)
-{
-    META_FUNCTION_TASK();
-    if (!is_submitted)
-        return;
-
-    if (vk_device.getFenceStatus(vk_unique_fence.get()) == vk::Result::eNotReady)
-    {
-        const vk::Result wait_result = vk_device.waitForFences(vk_unique_fence.get(), true, std::numeric_limits<uint64_t>::max());
-        META_CHECK_EQUAL_DESCR(wait_result, vk::Result::eSuccess, "failed to wait for frame synchronization fence (-N-1)");
-    }
-
-    vk_device.resetFences(vk_unique_fence.get());
-    is_submitted = false;
 }
 
 } // namespace Methane::Graphics::Vulkan

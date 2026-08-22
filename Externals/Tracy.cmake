@@ -1,7 +1,7 @@
 CPMAddPackage(
     NAME Tracy
     GITHUB_REPOSITORY MethanePowered/Tracy
-    VERSION 0.11.2.1
+    VERSION 0.14.0.1
     OPTIONS
         "TRACY_STATIC ON"
         "TRACY_ENABLE ${METHANE_TRACY_PROFILING_ENABLED}"
@@ -18,5 +18,6 @@ if(NOT MSVC)
         PRIVATE
             -Wno-unused-result # ignoring return value of 'fscanf' declared with attribute ‘warn_unused_result’
             -Wno-deprecated-declarations # ignore warning: 'sprintf' is deprecated
+            -Wno-format-overflow # warning: ‘%s’ directive writing up to 1023 bytes into a region of size 997
     )
 endif()

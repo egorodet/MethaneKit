@@ -43,6 +43,15 @@ RenderContext::RenderContext(const Methane::Platform::AppEnvironment& app_env, D
     m_metal_view.redrawing = YES;
 }
 
+RenderContext::~RenderContext()
+{
+    META_FUNCTION_TASK();
+    TryRelease();
+#if !__has_feature(objc_arc)
+    [m_metal_view release];
+#endif
+}
+
 bool RenderContext::SetVSyncEnabled(bool vsync_enabled)
 {
     META_FUNCTION_TASK();

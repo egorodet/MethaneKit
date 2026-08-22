@@ -25,6 +25,7 @@ Metal fence implementation.
 #include <Methane/Graphics/Metal/CommandQueue.hh>
 #include <Methane/Graphics/Metal/Device.hh>
 #include <Methane/Graphics/Metal/IContext.h>
+#include <Methane/Graphics/Metal/DebugMessages.hh>
 
 #include <Methane/Graphics/Base/Context.h>
 #include <Methane/Platform/Apple/Types.hh>
@@ -51,8 +52,11 @@ void Fence::Signal()
     META_FUNCTION_TASK();
     Base::Fence::Signal();
     
-    id<MTLCommandBuffer> mtl_command_buffer = [GetMetalCommandQueue().GetNativeCommandQueue() commandBuffer];
+    id<MTLCommandBuffer> mtl_command_buffer = GetMetalCommandQueue().CreateNativeCommandBuffer();
     [mtl_command_buffer encodeSignalEvent:m_mtl_event value:GetValue()];
+    [mtl_command_buffer addCompletedHandler:^(id<MTLCommandBuffer> mtl_completed_command_buffer) {
+        PrintCommandBufferDebugMessages(mtl_completed_command_buffer);
+    }];
     [mtl_command_buffer commit];
     
     m_is_signalled = false;
@@ -87,8 +91,11 @@ void Fence::WaitOnGpu(Rhi::ICommandQueue& wait_on_command_queue)
     Base::Fence::WaitOnGpu(wait_on_command_queue);
 
     CommandQueue& mtl_wait_on_command_queue = static_cast<CommandQueue&>(wait_on_command_queue);
-    id<MTLCommandBuffer> mtl_command_buffer = [mtl_wait_on_command_queue.GetNativeCommandQueue() commandBuffer];
+    id<MTLCommandBuffer> mtl_command_buffer = mtl_wait_on_command_queue.CreateNativeCommandBuffer();
     [mtl_command_buffer encodeWaitForEvent:m_mtl_event value:GetValue()];
+    [mtl_command_buffer addCompletedHandler:^(id<MTLCommandBuffer> mtl_completed_command_buffer) {
+        PrintCommandBufferDebugMessages(mtl_completed_command_buffer);
+    }];
     [mtl_command_buffer commit];
 }
 

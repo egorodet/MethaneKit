@@ -28,9 +28,11 @@ Vulkan implementation of the device interface.
 #include <Methane/Platform/AppEnvironment.h>
 #include <Methane/Data/RangeSet.hpp>
 #include <Methane/Memory.hpp>
+#include <Methane/Instrumentation.h>
 
 #include <vulkan/vulkan.hpp>
 #include <map>
+#include <mutex>
 
 namespace Methane::Graphics::Vulkan
 {
@@ -47,11 +49,11 @@ public:
     [[nodiscard]] uint32_t                  GetQueuesCount() const noexcept      { return m_queues_count; }
     [[nodiscard]] bool                      CanPresentToWindow() const noexcept  { return m_can_present_to_window; }
     [[nodiscard]] const std::vector<float>& GetPriorities() const noexcept       { return m_priorities; }
-    [[nodiscard]] bool                      HasFreeQueues() const noexcept       { return !m_free_indices.IsEmpty(); }
+    [[nodiscard]] bool                      HasFreeQueues() const;
     [[nodiscard]] uint32_t                  ClaimQueueIndex() const;
 
     void ReleaseQueueIndex(uint32_t queue_index) const;
-    void IncrementQueuesCount(uint32_t extra_queues_count) noexcept;
+    void IncrementQueuesCount(uint32_t extra_queues_count);
 
 private:
     uint32_t           m_family_index;
@@ -60,7 +62,10 @@ private:
     bool               m_can_present_to_window;
     std::vector<float> m_priorities;
 
-    mutable Data::RangeSet<uint32_t> m_free_indices;
+    // Queue indices are claimed and released by the command queues, which may be created and destroyed
+    // from different threads, so the free indices set is guarded with the mutex.
+    mutable Data::RangeSet<uint32_t>  m_free_indices;
+    mutable TracyLockable(std::mutex, m_free_indices_mutex);
 };
 
 class Device final
@@ -101,6 +106,7 @@ public:
     const vk::QueueFamilyProperties& GetNativeQueueFamilyProperties(uint32_t queue_family_index) const;
     bool                             IsExtensionSupported(std::string_view required_extension) const;
     bool                             IsDynamicStateSupported() const noexcept { return m_is_dynamic_state_supported; }
+    bool                             IsPrimitiveRestartAlwaysEnabled() const noexcept { return m_is_portability_subset_supported; }
 
 private:
     using QueueFamilyReservationByType = std::map<Rhi::CommandListType, Ptr<QueueFamilyReservation>>;
@@ -115,6 +121,7 @@ private:
     const std::vector<std::string>         m_supported_extension_names_storage;
     const std::set<std::string_view>       m_supported_extension_names_set;
     const bool                             m_is_dynamic_state_supported = false;
+    const bool                             m_is_portability_subset_supported = false;
     std::vector<vk::QueueFamilyProperties> m_vk_queue_family_properties;
     vk::UniqueDevice                       m_vk_unique_device;
     QueueFamilyReservationByType           m_queue_family_reservation_by_type;
