@@ -61,7 +61,7 @@ public:
         { { pin::Keyboard::Key::LeftControl, pin::Keyboard::Key::Minus }, AppContextAction::RemoveFrameBufferFromSwapChain },
     };
 
-    AppContextController(Rhi::IRenderContext& context, const ActionByKeyboardState& action_by_keyboard_state = default_action_by_keyboard_state);
+    explicit AppContextController(Rhi::IRenderContext& context, const ActionByKeyboardState& action_by_keyboard_state = default_action_by_keyboard_state);
 
     // Input::Controller implementation
     void OnKeyboardChanged(pin::Keyboard::Key, pin::Keyboard::KeyState, const pin::Keyboard::StateChange& state_change) override;

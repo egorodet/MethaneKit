@@ -246,7 +246,7 @@ void Context::ExecuteSyncCommandLists(const Rhi::ICommandKit& upload_cmd_kit) co
 {
     META_FUNCTION_TASK();
     constexpr auto cmd_list_id = static_cast<Rhi::CommandListId>(cmd_list_purpose);
-    const std::vector<Rhi::CommandListId> cmd_list_ids = { cmd_list_id };
+    const std::vector cmd_list_ids = { cmd_list_id };
 
     for (const auto& [cmd_queue_ptr, cmd_kit_ptr] : m_default_command_kit_ptr_by_queue)
     {

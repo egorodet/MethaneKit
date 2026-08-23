@@ -229,9 +229,9 @@ void CommandKit::ExecuteListSet(Rhi::CommandListIdSpan cmd_list_ids, Opt<Data::I
 void CommandKit::ExecuteListSetAndWaitForCompletion(Rhi::CommandListIdSpan cmd_list_ids, Opt<Data::Index> frame_index_opt) const
 {
     META_FUNCTION_TASK();
-    std::mutex                  execution_wait_mutex;
-    size_t                      executing_cmd_list_count = cmd_list_ids.size();
-    std::condition_variable_any executing_cmd_list_set_condition_var;
+    std::mutex              execution_wait_mutex;
+    size_t                  executing_cmd_list_count = cmd_list_ids.size();
+    std::condition_variable executing_cmd_list_set_condition_var;
     GetQueue().Execute(GetListSet(cmd_list_ids, frame_index_opt),
                        [&executing_cmd_list_count, &execution_wait_mutex, &executing_cmd_list_set_condition_var](const Rhi::ICommandList&)
                        {

@@ -45,7 +45,7 @@ public:
 
     META_PIMPL_API explicit CommandListSet(const Ptr<ICommandListSet>& interface_ptr);
     META_PIMPL_API explicit CommandListSet(ICommandListSet& interface_ref);
-    META_PIMPL_API CommandListSet(const Refs<ICommandList>& command_list_refs, Opt<Data::Index> frame_index_opt = {});
+    META_PIMPL_API explicit CommandListSet(const Refs<ICommandList>& command_list_refs, Opt<Data::Index> frame_index_opt = {});
 
     META_PIMPL_API bool IsInitialized() const META_PIMPL_NOEXCEPT;
     META_PIMPL_API ICommandListSet& GetInterface() const META_PIMPL_NOEXCEPT;

@@ -245,7 +245,7 @@ void ShadowCubeApp::Init()
         
         // Create shadow pass configuration with depth attachment
         frame.shadow_pass.render_pass = m_shadow_pass_pattern.CreateRenderPass({
-            { frame.shadow_pass.rt_texture.GetInterface() },
+            { rhi::TextureView(frame.shadow_pass.rt_texture.GetInterface()) },
             shadow_texture_settings.dimensions.AsRectSize()
         });
         

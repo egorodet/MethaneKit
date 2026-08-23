@@ -31,7 +31,7 @@ namespace Methane::Platform
 
 static std::atomic<bool>& GetPrintToConsoleEnabledFlag() noexcept
 {
-    static std::atomic<bool> s_print_to_console_enabled(false);
+    static std::atomic s_print_to_console_enabled(false);
     return s_print_to_console_enabled;
 }
 

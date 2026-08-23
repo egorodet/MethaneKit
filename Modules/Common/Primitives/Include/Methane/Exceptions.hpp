@@ -206,7 +206,7 @@ private:
 class NotImplementedException : public std::logic_error
 {
 public:
-    NotImplementedException(const std::source_location& source_location, const std::string& description = "")
+    explicit NotImplementedException(const std::source_location& source_location, const std::string& description = "")
         : std::logic_error(fmt::format("Function '{}' in file '{}({}:{})' is not implemented{}.",
                                        source_location.function_name(), source_location.file_name(),
                                        source_location.line(), source_location.column(),

@@ -148,6 +148,9 @@ private:
     }
 
     Refs<IEmitter<EventType>> m_connected_emitter_refs;
+    // Mutex has to be recursive: Connect/DisconnectEmitters() are called with this lock held and
+    // call back into Emitter::Connect()/Disconnect(), which re-enter OnConnected()/OnDisconnected()
+    // on this receiver and lock it again on the same thread.
     TracyLockable(std::recursive_mutex, m_connected_emitter_refs_mutex);
 };
 

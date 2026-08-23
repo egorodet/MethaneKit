@@ -49,9 +49,13 @@ bool RenderPass::Update(const Rhi::RenderPassSettings& settings)
 
     m_settings = settings;
 
-    m_non_frame_buffer_attachment_textures.clear();
-    m_color_attachment_textures.clear();
-    m_depth_attachment_texture_ptr = nullptr;
+    {
+        // Invalidate lazily initialized attachment texture caches under the same lock which guards their initialization
+        std::scoped_lock lock_guard(m_mutex);
+        m_non_frame_buffer_attachment_textures.clear();
+        m_color_attachment_textures.clear();
+        m_depth_attachment_texture_ptr = nullptr;
+    }
 
     InitAttachmentStates();
     return true;
@@ -60,7 +64,11 @@ bool RenderPass::Update(const Rhi::RenderPassSettings& settings)
 void RenderPass::ReleaseAttachmentTextures()
 {
     META_FUNCTION_TASK();
-    m_non_frame_buffer_attachment_textures.clear();
+    {
+        // Invalidate lazily initialized attachment texture cache under the same lock which guards its initialization
+        std::scoped_lock lock_guard(m_mutex);
+        m_non_frame_buffer_attachment_textures.clear();
+    }
     m_settings.attachments.clear();
 }
 
