@@ -495,20 +495,22 @@ static void WriteArgumentBindingResourceIds(const ProgramArgumentBinding& arg_bi
 {
     META_FUNCTION_TASK();
     Rhi::ResourceType resource_type = arg_binding.GetSettings().resource_type;
+    const ProgramArgumentBinding::NativeResourceViews::Ptr resource_views_ptr = arg_binding.GetNativeResourceViews();
+    META_CHECK_NOT_NULL(resource_views_ptr);
     switch(resource_type)
     {
         using enum Rhi::ResourceType;
 
         case Buffer:
-            WriteNativeBufferAddresses(arg_binding.GetNativeBuffers(), arg_binding.GetBufferOffsets(), buffer_ptr);
+            WriteNativeBufferAddresses(resource_views_ptr->buffers, resource_views_ptr->buffer_offsets, buffer_ptr);
             break;
 
         case Texture:
-            WriteNativeTextureIds(arg_binding.GetNativeTextures(), buffer_ptr);
+            WriteNativeTextureIds(resource_views_ptr->textures, buffer_ptr);
             break;
 
         case Sampler:
-            WriteNativeSamplerIds(arg_binding.GetNativeSamplerStates(), buffer_ptr);
+            WriteNativeSamplerIds(resource_views_ptr->sampler_states, buffer_ptr);
             break;
 
         default:
@@ -706,27 +708,29 @@ void ProgramBindings::SetMetalResources(const CommandEncoderType& mtl_cmd_encode
             }
             else if (!set_root_constant_values_only)
             {
+                const ProgramArgumentBinding::NativeResourceViews::Ptr resource_views_ptr = argument_binding.GetNativeResourceViews();
+                META_CHECK_NOT_NULL(resource_views_ptr);
                 switch (settings.resource_type)
                 {
                     using enum Rhi::ResourceType;
                     case Buffer:
                         SetMetalResourcesForAll<command_type>(settings.argument.GetShaderType(),
                                                               program, mtl_cmd_encoder,
-                                                              argument_binding.GetNativeBuffers(),
+                                                              resource_views_ptr->buffers,
                                                               settings.argument_index,
-                                                              argument_binding.GetBufferOffsets());
+                                                              resource_views_ptr->buffer_offsets);
                         break;
 
                     case Texture:
                         SetMetalResourcesForAll<command_type>(settings.argument.GetShaderType(),
                                                               program, mtl_cmd_encoder,
-                                                              argument_binding.GetNativeTextures(),
+                                                              resource_views_ptr->textures,
                                                               settings.argument_index);
                         break;
 
                     case Sampler:
                         SetMetalResourcesForAll<command_type>(settings.argument.GetShaderType(), program, mtl_cmd_encoder,
-                                                              argument_binding.GetNativeSamplerStates(),
+                                                              resource_views_ptr->sampler_states,
                                                               settings.argument_index);
                         break;
 
@@ -855,8 +859,9 @@ void ProgramBindings::UpdateUsedResources()
     ForEachArgumentBinding([this](const Rhi::ProgramArgument&, const ArgumentBinding& argument_binding)
     {
         m_has_root_constant_values |= argument_binding.GetSettings().argument.IsRootConstantValue();
-        const ProgramArgumentBinding::NativeResources& argument_resources = argument_binding.GetNativeResources();
-        std::copy(argument_resources.begin(), argument_resources.end(),
+        const ProgramArgumentBinding::NativeResourceViews::Ptr resource_views_ptr = argument_binding.GetNativeResourceViews();
+        META_CHECK_NOT_NULL(resource_views_ptr);
+        std::copy(resource_views_ptr->resources.begin(), resource_views_ptr->resources.end(),
                   std::inserter(m_mtl_used_resources, m_mtl_used_resources.begin()));
     });
 }
@@ -889,11 +894,13 @@ ProgramBindings::NativeResourcesByUsage ProgramBindings::GetChangedResourcesByUs
     for (const auto& [program_arg, arg_binding_ptr]: GetArgumentBindings())
     {
         const auto& metal_argument_binding = static_cast<const ArgumentBinding&>(*arg_binding_ptr);
-        const ProgramArgumentBinding::NativeResources& argument_resources = metal_argument_binding.GetNativeResources();
+        const ProgramArgumentBinding::NativeResourceViews::Ptr resource_views_ptr = metal_argument_binding.GetNativeResourceViews();
+        META_CHECK_NOT_NULL(resource_views_ptr);
+        const ProgramArgumentBinding::NativeResources& argument_resources = resource_views_ptr->resources;
         if (argument_resources.empty())
             continue;
 
-        const NativeResourceUsageAndStage usage_and_stage(metal_argument_binding.GetNativeResourceUsage(),
+        const NativeResourceUsageAndStage usage_and_stage(resource_views_ptr->resource_usage,
                                                           metal_argument_binding.GetNativeRenderStages());
 
         if (metal_applied_program_bindings_ptr)

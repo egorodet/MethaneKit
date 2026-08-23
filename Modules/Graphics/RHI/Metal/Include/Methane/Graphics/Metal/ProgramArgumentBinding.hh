@@ -28,6 +28,8 @@ Metal implementation of the program argument binding interface.
 #import <Metal/Metal.h>
 
 #include <map>
+#include <memory>
+#include <mutex>
 
 namespace Methane::Graphics::Metal
 {
@@ -55,7 +57,20 @@ public:
     using NativeSamplerStates  = std::vector<__unsafe_unretained id<MTLSamplerState>>;
     using NativeOffsets        = std::vector<NSUInteger>;
 
+    struct NativeResourceViews
+    {
+        using Ptr = std::shared_ptr<const NativeResourceViews>;
+
+        MTLResourceUsage    resource_usage = MTLResourceUsageRead;
+        NativeResources     resources;
+        NativeSamplerStates sampler_states;
+        NativeTextures      textures;
+        NativeBuffers       buffers;
+        NativeOffsets       buffer_offsets;
+    };
+
     ProgramArgumentBinding(const Base::Context& context, const Settings& settings);
+    ProgramArgumentBinding(const ProgramArgumentBinding& other);
 
     // Base::ProgramArgumentBinding interface
     [[nodiscard]] Ptr<Base::ProgramArgumentBinding> CreateCopy() const override;
@@ -68,13 +83,8 @@ public:
 
     bool                       IsArgumentBufferMode() const noexcept   { return !m_settings_mt.argument_buffer_offset_by_shader_type.empty(); }
     const Settings&            GetMetalSettings() const noexcept       { return m_settings_mt; }
-    MTLResourceUsage           GetNativeResourceUsage() const noexcept { return m_mtl_resource_usage; }
     MTLRenderStages            GetNativeRenderStages() const noexcept  { return m_mtl_render_stages; }
-    const NativeResources&     GetNativeResources() const noexcept     { return m_mtl_resources; }
-    const NativeSamplerStates& GetNativeSamplerStates() const noexcept { return m_mtl_sampler_states; }
-    const NativeTextures&      GetNativeTextures() const noexcept      { return m_mtl_textures; }
-    const NativeBuffers&       GetNativeBuffers() const noexcept       { return m_mtl_buffers; }
-    const NativeOffsets&       GetBufferOffsets() const noexcept       { return m_mtl_buffer_offsets; }
+    NativeResourceViews::Ptr   GetNativeResourceViews() const noexcept;
 
 protected:
     // Base::ProgramArgumentBinding overrides...
@@ -83,14 +93,10 @@ protected:
 private:
     void SetMetalResourcesForViews(Rhi::ResourceViewSpan resource_views);
 
-    Settings            m_settings_mt;
-    MTLResourceUsage    m_mtl_resource_usage = MTLResourceUsageRead;
-    MTLRenderStages     m_mtl_render_stages;
-    NativeResources     m_mtl_resources;
-    NativeSamplerStates m_mtl_sampler_states;
-    NativeTextures      m_mtl_textures;
-    NativeBuffers       m_mtl_buffers;
-    NativeOffsets       m_mtl_buffer_offsets;
+    Settings                          m_settings_mt;
+    MTLRenderStages                   m_mtl_render_stages;
+    NativeResourceViews::Ptr          m_mtl_resource_views;
+    mutable TracyLockable(std::mutex, m_mtl_resource_views_mutex);
 };
 
 } // namespace Methane::Graphics::Metal

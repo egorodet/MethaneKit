@@ -73,10 +73,25 @@ static MTLRenderStages ConvertShaderTypeToMetalRenderStages(Rhi::ShaderType shad
     return mtl_render_stages;
 }
 
+static const ProgramArgumentBinding::NativeResourceViews::Ptr& GetEmptyNativeResourceViews()
+{
+    static const auto s_empty_resource_views = std::make_shared<const ProgramArgumentBinding::NativeResourceViews>();
+    return s_empty_resource_views;
+}
+
 ProgramArgumentBinding::ProgramArgumentBinding(const Base::Context& context, const Settings& settings)
     : Base::ProgramArgumentBinding(context, settings)
     , m_settings_mt(settings)
     , m_mtl_render_stages(ConvertShaderTypeToMetalRenderStages(settings.argument.GetShaderType()))
+    , m_mtl_resource_views(GetEmptyNativeResourceViews())
+{
+}
+
+ProgramArgumentBinding::ProgramArgumentBinding(const ProgramArgumentBinding& other)
+    : Base::ProgramArgumentBinding(other)
+    , m_settings_mt(other.m_settings_mt)
+    , m_mtl_render_stages(other.m_mtl_render_stages)
+    , m_mtl_resource_views(other.m_mtl_resource_views)
 {
 }
 
@@ -161,16 +176,21 @@ bool ProgramArgumentBinding::UpdateRootConstantResourceViews()
     return true;
 }
 
+ProgramArgumentBinding::NativeResourceViews::Ptr ProgramArgumentBinding::GetNativeResourceViews() const noexcept
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mtl_resource_views_mutex);
+    return m_mtl_resource_views;
+}
+
 void ProgramArgumentBinding::SetMetalResourcesForViews(Rhi::ResourceViewSpan resource_views)
 {
     META_FUNCTION_TASK();
 
-    m_mtl_resource_usage = {};
-    m_mtl_resources.clear();
-    m_mtl_sampler_states.clear();
-    m_mtl_textures.clear();
-    m_mtl_buffers.clear();
-    m_mtl_buffer_offsets.clear();
+    // The new snapshot is built entirely in a local object, so that concurrent readers keep using
+    // the previous one until the fully built snapshot is published in one step at the end.
+    auto native_resource_views_ptr = std::make_shared<NativeResourceViews>();
+    NativeResourceViews& native_resource_views = *native_resource_views_ptr;
 
     std::set<id<MTLResource>> mtl_resource_set;
 
@@ -178,40 +198,43 @@ void ProgramArgumentBinding::SetMetalResourcesForViews(Rhi::ResourceViewSpan res
     {
     using enum Rhi::ResourceType;
     case Sampler:
-        m_mtl_sampler_states.reserve(resource_views.size());
-        std::ranges::transform(resource_views, std::back_inserter(m_mtl_sampler_states),
+        native_resource_views.sampler_states.reserve(resource_views.size());
+        std::ranges::transform(resource_views, std::back_inserter(native_resource_views.sampler_states),
                                [](const Rhi::ResourceView& resource_view)
                                { return dynamic_cast<const class Sampler&>(resource_view.GetResource()).GetNativeSamplerState(); });
         break;
 
     case Texture:
-        m_mtl_textures.reserve(resource_views.size());
+        native_resource_views.textures.reserve(resource_views.size());
         for(const Rhi::ResourceView& resource_view : resource_views)
         {
             const auto& texture = dynamic_cast<const class Texture&>(resource_view.GetResource());
-            m_mtl_resource_usage |= texture.GetNativeResourceUsage();
+            native_resource_views.resource_usage |= texture.GetNativeResourceUsage();
             mtl_resource_set.insert(static_cast<id<MTLResource>>(texture.GetNativeTexture()));
-            m_mtl_textures.push_back(texture.GetNativeTexture());
+            native_resource_views.textures.push_back(texture.GetNativeTexture());
         }
         break;
 
     case Buffer:
-        m_mtl_buffers.reserve(resource_views.size());
-        m_mtl_buffer_offsets.reserve(resource_views.size());
+        native_resource_views.buffers.reserve(resource_views.size());
+        native_resource_views.buffer_offsets.reserve(resource_views.size());
         for (const Rhi::ResourceView& resource_view : resource_views)
         {
             const auto& buffer = dynamic_cast<const class Buffer&>(resource_view.GetResource());
-            m_mtl_resource_usage |= buffer.GetNativeResourceUsage();
+            native_resource_views.resource_usage |= buffer.GetNativeResourceUsage();
             mtl_resource_set.insert(static_cast<id<MTLResource>>(buffer.GetNativeBuffer()));
-            m_mtl_buffers.push_back(buffer.GetNativeBuffer());
-            m_mtl_buffer_offsets.push_back(static_cast<NSUInteger>(resource_view.GetOffset()));
+            native_resource_views.buffers.push_back(buffer.GetNativeBuffer());
+            native_resource_views.buffer_offsets.push_back(static_cast<NSUInteger>(resource_view.GetOffset()));
         }
         break;
 
     default: META_UNEXPECTED(m_settings_mt.resource_type);
     }
 
-    std::copy(mtl_resource_set.begin(), mtl_resource_set.end(), std::back_inserter(m_mtl_resources));
+    std::copy(mtl_resource_set.begin(), mtl_resource_set.end(), std::back_inserter(native_resource_views.resources));
+
+    std::scoped_lock lock_guard(m_mtl_resource_views_mutex);
+    m_mtl_resource_views = std::move(native_resource_views_ptr);
 }
 
 } // namespace Methane::Graphics::Metal
