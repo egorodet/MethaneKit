@@ -106,6 +106,7 @@ public:
     CalibratedTimestamps Calibrate() override;
 
 private:
+    const vk::TimeDomainEXT m_vk_cpu_time_domain;
     uint64_t                m_deviation = 0U;
 };
 

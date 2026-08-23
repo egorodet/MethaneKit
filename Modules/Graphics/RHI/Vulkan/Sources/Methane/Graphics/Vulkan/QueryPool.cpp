@@ -33,18 +33,29 @@ Vulkan GPU query pool implementation.
 #include <Methane/Instrumentation.h>
 #include <Methane/Checks.hpp>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <limits>
+#include <span>
+#include <string_view>
+#include <vector>
+#include <fmt/ranges.h>
 #include <magic_enum/magic_enum.hpp>
 
-static const vk::TimeDomainEXT g_vk_cpu_time_domain =
+// CPU time domains which can be used to calibrate GPU timestamps, in the order of preference.
+// The selected domain must return timestamps in the units which Data::GetQpcToNSecMultiplier()
+// converts to nanoseconds: QueryPerformanceCounter ticks on Windows and nanoseconds of the POSIX
+// monotonic clocks on all other platforms (where that multiplier is 1).
+static constexpr std::array g_vk_cpu_time_domains{
 #if defined(_WIN32)
-    vk::TimeDomainEXT::eQueryPerformanceCounter;
-#elif defined(__linux__) && defined CLOCK_MONOTONIC_RAW
-    vk::TimeDomainEXT::eClockMonotonicRaw;
+    vk::TimeDomainEXT::eQueryPerformanceCounter
 #else
-    static_cast<vk::TimeDomainEXT>(-1);
+    // MoltenVK exposes CLOCK_MONOTONIC_RAW only, while other Vulkan drivers may expose either of these.
+    vk::TimeDomainEXT::eClockMonotonicRaw,
+    vk::TimeDomainEXT::eClockMonotonic
 #endif
+};
 
 namespace Methane::Graphics::Vulkan
 {
@@ -68,6 +79,33 @@ static Data::Size GetMaxTimestampsCount(const Rhi::IContext& context, uint32_t m
                                 ? dynamic_cast<const Rhi::IRenderContext&>(context).GetSettings().frame_buffers_count
                                 : 1U;
     return frames_count * max_timestamps_per_frame;
+}
+
+// Used only to build the description of the failed check below, which is compiled out with METHANE_CHECKS_ENABLED=OFF.
+[[maybe_unused]] static std::vector<std::string_view> GetTimeDomainNames(std::span<const vk::TimeDomainEXT> time_domains)
+{
+    META_FUNCTION_TASK();
+    std::vector<std::string_view> time_domain_names;
+    time_domain_names.reserve(time_domains.size());
+    std::ranges::transform(time_domains, std::back_inserter(time_domain_names),
+                           [](vk::TimeDomainEXT time_domain) { return magic_enum::enum_name(time_domain); });
+    return time_domain_names;
+}
+
+static vk::TimeDomainEXT GetCalibrateableCpuTimeDomain(const vk::PhysicalDevice& vk_physical_device)
+{
+    META_FUNCTION_TASK();
+    // Not every driver exposes every CPU time domain: MoltenVK, for example, exposes CLOCK_MONOTONIC_RAW only,
+    // so the first domain supported by the device is taken from the platform preference list instead of
+    // requiring one hard-coded domain to be present.
+    const std::vector<vk::TimeDomainEXT> calibrateable_time_domains = vk_physical_device.getCalibrateableTimeDomainsEXT();
+    const auto cpu_time_domain_it = std::ranges::find_first_of(g_vk_cpu_time_domains, calibrateable_time_domains);
+    const bool is_cpu_time_domain_calibrateable = cpu_time_domain_it != g_vk_cpu_time_domains.end();
+    META_CHECK_TRUE_DESCR(is_cpu_time_domain_calibrateable,
+                          "Vulkan does not support calibration of any CPU time domain used on this platform ({}), device supports only ({})",
+                          fmt::join(GetTimeDomainNames(g_vk_cpu_time_domains), ", "),
+                          fmt::join(GetTimeDomainNames(calibrateable_time_domains), ", "));
+    return is_cpu_time_domain_calibrateable ? *cpu_time_domain_it : g_vk_cpu_time_domains.front();
 }
 
 Query::Query(Base::QueryPool& buffer, Base::CommandList& command_list, Index index, Range data_range)
@@ -131,9 +169,14 @@ CommandQueue& QueryPool::GetVulkanCommandQueue() noexcept
 }
 
 TimestampQueryPool::TimestampQueryPool(CommandQueue& command_queue, uint32_t max_timestamps_per_frame)
-    : QueryPool(command_queue, Type::Timestamp, 1U << 15U, 1U,
+    // Query pool is created with exactly as many queries as its data buffer can hold timestamps:
+    // over-allocating queries makes MoltenVK fail to create the backing MTLCounterSampleBuffer
+    // (limited to 32768 bytes, i.e. 4096 timestamps) and silently fall back to emulated timestamps.
+    : QueryPool(command_queue, Type::Timestamp,
+                GetMaxTimestampsCount(command_queue.GetContext(), max_timestamps_per_frame), 1U,
                 GetMaxTimestampsCount(command_queue.GetContext(), max_timestamps_per_frame) * sizeof(Timestamp),
                 sizeof(Timestamp))
+    , m_vk_cpu_time_domain(GetCalibrateableCpuTimeDomain(command_queue.GetVulkanDevice().GetNativePhysicalDevice()))
 {
     META_FUNCTION_TASK();
 
@@ -144,15 +187,8 @@ TimestampQueryPool::TimestampQueryPool(CommandQueue& command_queue, uint32_t max
     const float gpu_timestamp_period = vk_physical_device.getProperties().limits.timestampPeriod;
     SetGpuFrequency(static_cast<Frequency>(gpu_timestamp_period * std::chrono::nanoseconds(1s).count()));
 
-    // Check if Vulkan supports CPU time domains calibration
-    const auto calibrateable_time_domains = vk_physical_device.getCalibrateableTimeDomainsEXT();
-    bool is_cpu_time_domain_calibrateable = std::ranges::find(calibrateable_time_domains, g_vk_cpu_time_domain) != calibrateable_time_domains.end();
-    META_CHECK_TRUE_DESCR(is_cpu_time_domain_calibrateable,
-                          "Vulkan does not support calibration of the CPU time domain {}",
-                          magic_enum::enum_name(g_vk_cpu_time_domain));
-
     // Calculate the desired CPU-GPU timestamps deviation
-    const std::array<vk::CalibratedTimestampInfoEXT, 2> timestamp_infos = {{ { vk::TimeDomainEXT::eDevice }, { g_vk_cpu_time_domain }, }};
+    const std::array<vk::CalibratedTimestampInfoEXT, 2> timestamp_infos = {{ { vk::TimeDomainEXT::eDevice }, { m_vk_cpu_time_domain }, }};
     std::array<uint64_t, 2>  timestamps{{}};
     std::array<uint64_t, 32> probe_deviations{{}};
     for(uint64_t& deviation : probe_deviations)
@@ -189,7 +225,7 @@ Rhi::ITimestampQueryPool::CalibratedTimestamps TimestampQueryPool::Calibrate()
     constexpr uint32_t max_calibration_attempts = 16U;
 
     const vk::Device& vk_device = GetVulkanCommandQueue().GetVulkanDevice().GetNativeDevice();
-    const std::array<vk::CalibratedTimestampInfoEXT, 2> timestamp_infos = {{ { vk::TimeDomainEXT::eDevice }, { g_vk_cpu_time_domain }, }};
+    const std::array<vk::CalibratedTimestampInfoEXT, 2> timestamp_infos = {{ { vk::TimeDomainEXT::eDevice }, { m_vk_cpu_time_domain }, }};
     std::array<uint64_t, 2> timestamps{{}};
     std::array<uint64_t, 2> best_timestamps{{}};
     uint64_t deviation = 0U;
