@@ -308,6 +308,12 @@ bool TypographyApp::Resize(const gfx::FrameSize& frame_size, bool is_minimized)
     if (!UserInterfaceApp::Resize(frame_size, is_minimized))
         return false;
 
+    // Text items and font atlas badges are created by Init() only after the base application was
+    // initialized, so a resize event received in between (for example, when Init() was interrupted
+    // by an exception) has nothing to lay out yet and must not index the incomplete text items.
+    if (m_texts.size() < g_text_blocks_count)
+        return false;
+
     const gfx::FrameSize frame_size_in_dots = GetFrameSizeInDots();
     int32_t       vertical_text_pos_in_dots = g_top_text_pos_in_dots;
 

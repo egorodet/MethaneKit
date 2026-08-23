@@ -242,7 +242,11 @@ bool AppBase::Resize(const Data::FrameSize& frame_size, bool is_minimized)
         m_frame_size = frame_size;
     }
 
-    return m_initialized && is_resizing;
+    // Resizing is stopped after an error the same way as rendering is stopped in UpdateAndRender():
+    // Init() sets m_initialized before the derived application has finished its own initialization,
+    // so an Init() interrupted by an exception leaves partially constructed application state, which
+    // the platform apps would otherwise keep resizing until the error alert terminates the process.
+    return m_initialized && is_resizing && !HasError();
 }
 
 void AppBase::Alert(const Message& msg, bool deferred)
