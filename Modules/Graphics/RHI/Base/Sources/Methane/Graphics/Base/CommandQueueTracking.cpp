@@ -142,8 +142,10 @@ void CommandQueueTracking::WaitForExecution() noexcept
             m_execution_waiting_condition_var.wait_for(lock, std::chrono::milliseconds(32),
                                                        [this]
                                                        {
-                                                           return !m_execution_waiting || !m_executing_command_lists.
-                                                                  empty();
+                                                           // The executing command lists queue is modified by other threads
+                                                           // (see Execute() and ProcessExecutingCommandListSet()), so it is
+                                                           // read here under its own mutex rather than under the waiting mutex.
+                                                           return !m_execution_waiting || !IsExecutingCommandListsQueueEmpty();
                                                        }
             );
 
@@ -154,12 +156,10 @@ void CommandQueueTracking::WaitForExecution() noexcept
                 m_name_changed = false;
             }
 
-            while (!m_executing_command_lists.empty())
+            // The loop is driven by the pop result only: testing m_executing_command_lists.empty() here
+            // would be an unsynchronized read of the queue concurrently modified by the other threads.
+            while (const Ptr<CommandListSet> command_list_set_ptr = PopNextExecutingCommandListSet())
             {
-                Ptr<CommandListSet> command_list_set_ptr = PopNextExecutingCommandListSet();
-                if (!command_list_set_ptr)
-                    break;
-
                 CompleteCommandListSetExecution(*command_list_set_ptr);
             }
 
@@ -180,6 +180,13 @@ void CommandQueueTracking::WaitForExecution() noexcept
         m_execution_waiting_exception_ptr = std::current_exception();
         m_execution_waiting               = false;
     }
+}
+
+bool CommandQueueTracking::IsExecutingCommandListsQueueEmpty() const
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_executing_command_lists_mutex);
+    return m_executing_command_lists.empty();
 }
 
 bool CommandQueueTracking::IsFrontListExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept
@@ -251,15 +258,19 @@ Ptr<CommandListSet> CommandQueueTracking::PopNextExecutingCommandListSet()
     return command_list_set_ptr;
 }
 
-void CommandQueueTracking::CompleteCommandListSetExecution(CommandListSet& executing_command_list_set)
+void CommandQueueTracking::CompleteCommandListSetExecution(CommandListSet&)
 {
     META_FUNCTION_TASK();
-    std::unique_lock lock_guard(m_executing_command_lists_mutex);
-    if (!m_executing_command_lists.empty() &&
-        m_executing_command_lists.front().get() == std::addressof(executing_command_list_set))
-    {
-        m_executing_command_lists.pop();
-    }
+    // NOTE: the completed command list set was already popped out of the executing queue by
+    // PopNextExecutingCommandListSet(), atomically with waiting for its completion, and it must NOT be
+    // popped here once more. The executing command lists mutex is released by the time this method is
+    // called, so the main thread may have already re-executed the very same command list set object for
+    // the next frame with the same frame buffer index, pushing it back to the front of the queue.
+    // Popping the queue front here used to drop that new execution out of tracking, after which
+    // WaitUntilCompleted() did not wait for it (IsExecutingOnFrameIndex() found nothing to wait for)
+    // and the following Reset() of its command lists threw an exception on the 'Executing' state.
+    // This method is kept as an extension point for the native command queue implementations,
+    // which need to release per-execution resources of the completed command list set.
 }
 
 void CommandQueueTracking::ShutdownQueueExecution()
