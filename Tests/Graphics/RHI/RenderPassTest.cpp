@@ -28,6 +28,8 @@ Unit-tests of the RHI RenderPass
 #include <Methane/Graphics/RHI/RenderPattern.h>
 #include <Methane/Graphics/RHI/RenderPass.h>
 #include <Methane/Graphics/RHI/ObjectRegistry.h>
+#include <Methane/Graphics/Base/RenderPass.h>
+#include <Methane/Graphics/Base/Texture.h>
 
 #include <memory>
 #include <taskflow/taskflow.hpp>
@@ -132,11 +134,77 @@ TEST_CASE("RHI Render Pass Functions", "[rhi][render][pass]")
         CHECK(render_pass.GetSettings() == new_render_pass_resources.settings);
     }
 
+    SECTION("Update Settings Invalidates Attachment Textures Cache")
+    {
+        const auto& base_render_pass = dynamic_cast<const Base::RenderPass&>(render_pass.GetInterface());
+
+        // Populate lazily-initialized attachment texture caches with the original attachments
+        const Base::Texture* orig_color_texture_ptr = &base_render_pass.GetColorAttachmentTextures().front().get();
+        const Base::Texture* orig_depth_texture_ptr = base_render_pass.GetDepthAttachmentTexture();
+        CHECK(orig_color_texture_ptr == render_pass_resources.frame_buffer_texture.GetInterfacePtr().get());
+        CHECK(orig_depth_texture_ptr == render_pass_resources.depth_stencil_texture.GetInterfacePtr().get());
+
+        const Test::RenderPassResources new_render_pass_resources = Test::GetRenderPassResources(render_pattern);
+        CHECK(render_pass.Update(new_render_pass_resources.settings));
+
+        CHECK(&base_render_pass.GetColorAttachmentTextures().front().get() ==
+              new_render_pass_resources.frame_buffer_texture.GetInterfacePtr().get());
+        CHECK(base_render_pass.GetDepthAttachmentTexture() ==
+              new_render_pass_resources.depth_stencil_texture.GetInterfacePtr().get());
+    }
+
     SECTION("Release Attachment Textures")
     {
         const Rhi::RenderPassSettings& render_pass_settings = render_pass.GetSettings();
         CHECK_FALSE(render_pass_settings.attachments.empty());
         CHECK_NOTHROW(render_pass.ReleaseAttachmentTextures());
         CHECK(render_pass_settings.attachments.empty());
+    }
+}
+
+TEST_CASE("RHI Render Pass with Stencil Attachment Functions", "[rhi][render][pass]")
+{
+    const Rhi::RenderPattern        render_pattern        = render_context.CreateRenderPattern(Test::GetRenderPatternSettings(true));
+    const Test::RenderPassResources render_pass_resources = Test::GetRenderPassResources(render_pattern);
+    const Rhi::RenderPass           render_pass           = render_pattern.CreateRenderPass(render_pass_resources.settings);
+    const auto& base_render_pass = dynamic_cast<const Base::RenderPass&>(render_pass.GetInterface());
+
+    SECTION("Get Stencil Attachment Texture")
+    {
+        REQUIRE(render_pass_resources.stencil_texture.IsInitialized());
+        CHECK(base_render_pass.GetStencilAttachmentTexture() ==
+              render_pass_resources.stencil_texture.GetInterfacePtr().get());
+    }
+
+    SECTION("Update Settings Invalidates Stencil Attachment Texture Cache")
+    {
+        // Populate the lazily-initialized stencil attachment texture cache with the original attachment
+        REQUIRE(base_render_pass.GetStencilAttachmentTexture() ==
+                render_pass_resources.stencil_texture.GetInterfacePtr().get());
+
+        const Test::RenderPassResources new_render_pass_resources = Test::GetRenderPassResources(render_pattern);
+        REQUIRE(new_render_pass_resources.stencil_texture.GetInterfacePtr() !=
+                render_pass_resources.stencil_texture.GetInterfacePtr());
+        CHECK(render_pass.Update(new_render_pass_resources.settings));
+
+        CHECK(base_render_pass.GetStencilAttachmentTexture() ==
+              new_render_pass_resources.stencil_texture.GetInterfacePtr().get());
+    }
+
+    SECTION("Update Settings Invalidates Non-Frame-Buffer Attachment Textures Cache")
+    {
+        // Frame buffer color attachment is excluded from the non-frame-buffer textures, so only depth & stencil remain
+        const Ptrs<Base::Texture>& orig_textures = base_render_pass.GetNonFrameBufferAttachmentTextures();
+        REQUIRE(orig_textures.size() == 2U);
+        CHECK(orig_textures[0].get() == render_pass_resources.depth_stencil_texture.GetInterfacePtr().get());
+        CHECK(orig_textures[1].get() == render_pass_resources.stencil_texture.GetInterfacePtr().get());
+
+        const Test::RenderPassResources new_render_pass_resources = Test::GetRenderPassResources(render_pattern);
+        CHECK(render_pass.Update(new_render_pass_resources.settings));
+
+        const Ptrs<Base::Texture>& new_textures = base_render_pass.GetNonFrameBufferAttachmentTextures();
+        REQUIRE(new_textures.size() == 2U);
+        CHECK(new_textures[0].get() == new_render_pass_resources.depth_stencil_texture.GetInterfacePtr().get());
+        CHECK(new_textures[1].get() == new_render_pass_resources.stencil_texture.GetInterfacePtr().get());
     }
 }

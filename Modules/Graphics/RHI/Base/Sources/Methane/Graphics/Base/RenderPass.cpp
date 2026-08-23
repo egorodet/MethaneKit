@@ -55,6 +55,7 @@ bool RenderPass::Update(const Rhi::RenderPassSettings& settings)
         m_non_frame_buffer_attachment_textures.clear();
         m_color_attachment_textures.clear();
         m_depth_attachment_texture_ptr = nullptr;
+        m_stencil_attachment_texture_ptr = nullptr;
     }
 
     InitAttachmentStates();
