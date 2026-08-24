@@ -29,9 +29,12 @@ Base implementation of the context interface.
 #include <Methane/Graphics/RHI/IContext.h>
 #include <Methane/Graphics/RHI/ICommandKit.h>
 #include <Methane/Data/Emitter.hpp>
+#include <Methane/Instrumentation.h>
 
 #include <magic_enum/magic_enum.hpp>
 #include <array>
+#include <atomic>
+#include <mutex>
 #include <string>
 
 namespace tf
@@ -91,7 +94,7 @@ public:
     // IObject interface
     bool SetName(std::string_view name) override;
 
-    DeferredAction           GetRequestedAction() const noexcept { return m_requested_action; }
+    DeferredAction           GetRequestedAction() const noexcept { return m_requested_action.load(std::memory_order_acquire); }
     Ptr<Device>              GetBaseDevicePtr() const noexcept   { return m_device_ptr; }
     Device&                  GetBaseDevice();
     const Device&            GetBaseDevice() const;
@@ -119,10 +122,18 @@ private:
     UniquePtr<Rhi::IDescriptorManager> m_descriptor_manager_ptr;
     tf::Executor&                      m_parallel_executor;
     ObjectRegistry                     m_objects_cache;
+
+    // Default command kits are lazily created by the const GetDefaultCommandKit() getters, which are
+    // reachable from resource upload paths running on parallel-rendering worker threads.
+    mutable TracyLockable(std::mutex,  m_default_command_kits_mutex);
     mutable CommandKitPtrByType        m_default_command_kit_ptrs;
     mutable CommandKitByQueue          m_default_command_kit_ptr_by_queue;
-    mutable DeferredAction             m_requested_action = DeferredAction::None;
-    mutable bool                       m_is_completing_initialization = false;
+
+    // Atomic because RequestDeferredAction() escalates the pending action from any thread:
+    // IBuffer/ITexture::SetData() and IProgramArgumentBinding::SetRootConstant() are called
+    // concurrently from parallel-rendering worker threads.
+    mutable std::atomic<DeferredAction> m_requested_action{ DeferredAction::None };
+    mutable bool                        m_is_completing_initialization = false; // NOSONAR - only written by CompleteInitialization() on the render thread
 };
 
 } // namespace Methane::Graphics::Base

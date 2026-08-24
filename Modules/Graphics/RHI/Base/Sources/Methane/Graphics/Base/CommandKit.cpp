@@ -87,6 +87,8 @@ bool CommandKit::SetName(std::string_view name)
     if (!Object::SetName(name))
         return false;
 
+    std::scoped_lock lock_guard(m_mutex);
+
     if (m_cmd_queue_ptr)
         m_cmd_queue_ptr->SetName(fmt::format("{} Command Queue", GetName()));
 
@@ -110,6 +112,13 @@ bool CommandKit::SetName(std::string_view name)
 Rhi::ICommandQueue& CommandKit::GetQueue() const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
+    return GetQueueUnlocked();
+}
+
+Rhi::ICommandQueue& CommandKit::GetQueueUnlocked() const
+{
+    META_FUNCTION_TASK();
     if (m_cmd_queue_ptr)
         return *m_cmd_queue_ptr;
 
@@ -121,6 +130,7 @@ Rhi::ICommandQueue& CommandKit::GetQueue() const
 bool CommandKit::HasList(Rhi::CommandListId cmd_list_id) const noexcept
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
     return cmd_list_index < m_cmd_list_ptrs.size() && m_cmd_list_ptrs[cmd_list_index];
 }
@@ -128,11 +138,19 @@ bool CommandKit::HasList(Rhi::CommandListId cmd_list_id) const noexcept
 bool CommandKit::HasListWithState(Rhi::CommandListState cmd_list_state, Rhi::CommandListId cmd_list_id) const noexcept
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
     return cmd_list_index < m_cmd_list_ptrs.size() && m_cmd_list_ptrs[cmd_list_index] && m_cmd_list_ptrs[cmd_list_index]->GetState() == cmd_list_state;
 }
 
 Rhi::ICommandList& CommandKit::GetList(Rhi::CommandListId cmd_list_id = 0U) const
+{
+    META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
+    return GetListUnlocked(cmd_list_id);
+}
+
+Rhi::ICommandList& CommandKit::GetListUnlocked(Rhi::CommandListId cmd_list_id) const
 {
     META_FUNCTION_TASK();
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
@@ -147,9 +165,9 @@ Rhi::ICommandList& CommandKit::GetList(Rhi::CommandListId cmd_list_id = 0U) cons
     switch (m_cmd_list_type)
     {
     using enum Rhi::CommandListType;
-    case Transfer: cmd_list_ptr = GetQueue().CreateTransferCommandList(); break;
-    case Render:   cmd_list_ptr = RenderCommandList::CreateForSynchronization(GetQueue()); break;
-    case Compute:  cmd_list_ptr = GetQueue().CreateComputeCommandList(); break;
+    case Transfer: cmd_list_ptr = GetQueueUnlocked().CreateTransferCommandList(); break;
+    case Render:   cmd_list_ptr = RenderCommandList::CreateForSynchronization(GetQueueUnlocked()); break;
+    case Compute:  cmd_list_ptr = GetQueueUnlocked().CreateComputeCommandList(); break;
     default: META_UNEXPECTED(m_cmd_list_type);
     }
 
@@ -187,6 +205,8 @@ Rhi::ICommandListSet& CommandKit::GetListSet(Rhi::CommandListIdSpan cmd_list_ids
 {
     META_FUNCTION_TASK();
     META_CHECK_NOT_EMPTY(cmd_list_ids);
+    std::scoped_lock lock_guard(m_mutex);
+
     const CommandListSetId cmd_list_set_id = GetCommandListSetId(cmd_list_ids, frame_index_opt);
 
     Ptr<Rhi::ICommandListSet>& cmd_list_set_ptr = m_cmd_list_set_by_id[cmd_list_set_id];
@@ -196,7 +216,7 @@ Rhi::ICommandListSet& CommandKit::GetListSet(Rhi::CommandListIdSpan cmd_list_ids
     Refs<Rhi::ICommandList> command_list_refs;
     for(Rhi::CommandListId cmd_list_id : cmd_list_ids)
     {
-        command_list_refs.emplace_back(GetList(cmd_list_id));
+        command_list_refs.emplace_back(GetListUnlocked(cmd_list_id));
     }
 
     cmd_list_set_ptr = Rhi::ICommandListSet::Create(command_list_refs, frame_index_opt);
@@ -206,6 +226,8 @@ Rhi::ICommandListSet& CommandKit::GetListSet(Rhi::CommandListIdSpan cmd_list_ids
 Rhi::IFence& CommandKit::GetFence(Rhi::CommandListId fence_id) const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
+
     const uint32_t fence_index = GetCommandListIndexById(fence_id);
     if (fence_index >= m_fence_ptrs.size())
         m_fence_ptrs.resize(fence_index + 1);
@@ -215,7 +237,7 @@ Rhi::IFence& CommandKit::GetFence(Rhi::CommandListId fence_id) const
     if (fence_ptr)
         return *fence_ptr;
 
-    fence_ptr = Rhi::IFence::Create(GetQueue());
+    fence_ptr = Rhi::IFence::Create(GetQueueUnlocked());
     fence_ptr->SetName(fmt::format("{} Fence {}", GetName(), fence_id));
     return *fence_ptr;
 }

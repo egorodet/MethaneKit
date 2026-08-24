@@ -72,7 +72,14 @@ Ptr<Rhi::ICommandKit> Context::CreateCommandKit(Rhi::CommandListType type) const
 void Context::RequestDeferredAction(DeferredAction action) const noexcept
 {
     META_FUNCTION_TASK();
-    m_requested_action = std::max(m_requested_action, action);
+    // Escalate the pending action to the strongest one requested by any thread.
+    // DeferredAction values are ordered None < UploadResources < CompleteInitialization.
+    DeferredAction prev_action = m_requested_action.load(std::memory_order_acquire);
+    while (prev_action < action &&
+           !m_requested_action.compare_exchange_weak(prev_action, action,
+                                                     std::memory_order_acq_rel,
+                                                     std::memory_order_acquire))
+    { }
 }
 
 void Context::CompleteInitialization()
@@ -87,7 +94,7 @@ void Context::CompleteInitialization()
     UploadResourcesAndNotify();
     GetDescriptorManager().CompleteInitialization();
 
-    m_requested_action             = DeferredAction::None;
+    m_requested_action.store(DeferredAction::None, std::memory_order_release);
     m_is_completing_initialization = false;
 }
 
@@ -148,8 +155,17 @@ void Context::Release()
 
     m_device_ptr.reset();
 
-    m_default_command_kit_ptr_by_queue.clear();
-    for (Ptr<Rhi::ICommandKit>& cmd_kit_ptr : m_default_command_kit_ptrs)
+    // Move the command kits out under the lock and destroy them after releasing it, so that
+    // command queue shutdown (which joins the execution waiting thread) is not done while holding it.
+    CommandKitByQueue   released_command_kit_ptr_by_queue;
+    CommandKitPtrByType released_command_kit_ptrs;
+    {
+        std::scoped_lock lock_guard(m_default_command_kits_mutex);
+        released_command_kit_ptr_by_queue.swap(m_default_command_kit_ptr_by_queue);
+        released_command_kit_ptrs.swap(m_default_command_kit_ptrs);
+    }
+    released_command_kit_ptr_by_queue.clear();
+    for (Ptr<Rhi::ICommandKit>& cmd_kit_ptr : released_command_kit_ptrs)
         cmd_kit_ptr.reset();
 
     Data::Emitter<Rhi::IContextCallback>::Emit(&Rhi::IContextCallback::OnContextReleased, std::ref(*this));
@@ -176,6 +192,8 @@ void Context::Initialize(Device& device, bool is_callback_emitted)
 Rhi::ICommandKit& Context::GetDefaultCommandKit(Rhi::CommandListType type) const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_default_command_kits_mutex);
+
     Ptr<Rhi::ICommandKit>& cmd_kit_ptr = m_default_command_kit_ptrs[magic_enum::enum_index(type).value()];
     if (cmd_kit_ptr)
         return *cmd_kit_ptr;
@@ -190,6 +208,8 @@ Rhi::ICommandKit& Context::GetDefaultCommandKit(Rhi::CommandListType type) const
 Rhi::ICommandKit& Context::GetDefaultCommandKit(Rhi::ICommandQueue& cmd_queue) const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_default_command_kits_mutex);
+
     Ptr<Rhi::ICommandKit>& cmd_kit_ptr = m_default_command_kit_ptr_by_queue[std::addressof(cmd_queue)];
     if (cmd_kit_ptr)
         return *cmd_kit_ptr;
@@ -233,10 +253,13 @@ bool Context::SetName(std::string_view name)
         return false;
 
     GetBaseDevice().SetName(fmt::format("{} Device", name));
-    for(const Ptr<Rhi::ICommandKit>& cmd_kit_ptr : m_default_command_kit_ptrs)
     {
-        if (cmd_kit_ptr)
-            cmd_kit_ptr->SetName(fmt::format("{} {}", name, g_default_command_kit_names[magic_enum::enum_index(cmd_kit_ptr->GetListType()).value()]));
+        std::scoped_lock lock_guard(m_default_command_kits_mutex);
+        for(const Ptr<Rhi::ICommandKit>& cmd_kit_ptr : m_default_command_kit_ptrs)
+        {
+            if (cmd_kit_ptr)
+                cmd_kit_ptr->SetName(fmt::format("{} {}", name, g_default_command_kit_names[magic_enum::enum_index(cmd_kit_ptr->GetListType()).value()]));
+        }
     }
     return true;
 }
@@ -248,7 +271,15 @@ void Context::ExecuteSyncCommandLists(const Rhi::ICommandKit& upload_cmd_kit) co
     constexpr auto cmd_list_id = static_cast<Rhi::CommandListId>(cmd_list_purpose);
     const std::vector cmd_list_ids = { cmd_list_id };
 
-    for (const auto& [cmd_queue_ptr, cmd_kit_ptr] : m_default_command_kit_ptr_by_queue)
+    // Iterate over a snapshot of the command kits: the command list execution and fence waits below
+    // must not hold the lock, or they would block a concurrent GetDefaultCommandKit() call.
+    CommandKitByQueue default_command_kit_ptr_by_queue;
+    {
+        std::scoped_lock lock_guard(m_default_command_kits_mutex);
+        default_command_kit_ptr_by_queue = m_default_command_kit_ptr_by_queue;
+    }
+
+    for (const auto& [cmd_queue_ptr, cmd_kit_ptr] : default_command_kit_ptr_by_queue)
     {
         if (cmd_kit_ptr.get() == std::addressof(upload_cmd_kit) || !cmd_kit_ptr->HasList(cmd_list_id))
             continue;
@@ -328,7 +359,8 @@ bool Context::UploadResourcesAndNotify()
 void Context::PerformRequestedAction()
 {
     META_FUNCTION_TASK();
-    switch(m_requested_action)
+    DeferredAction requested_action = m_requested_action.load(std::memory_order_acquire);
+    switch(requested_action)
     {
     case DeferredAction::None:
         break;
@@ -342,9 +374,13 @@ void Context::PerformRequestedAction()
         break;
 
     default:
-        META_UNEXPECTED(m_requested_action);
+        META_UNEXPECTED(requested_action);
     }
-    m_requested_action = DeferredAction::None;
+    // Clear only the action which was actually performed: another thread may have escalated the
+    // request while it was running, and that stronger request has to survive until the next frame.
+    m_requested_action.compare_exchange_strong(requested_action, DeferredAction::None,
+                                               std::memory_order_acq_rel,
+                                               std::memory_order_relaxed);
 }
 
 void Context::SetDevice(Device& device)
