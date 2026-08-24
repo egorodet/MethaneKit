@@ -105,7 +105,7 @@ private:
     using Impl = Methane::Graphics::META_GFX_NAME::ParallelRenderCommandList;
 
     Ptr<Impl> m_impl_ptr;
-    mutable std::vector<RenderCommandList> m_parallel_command_lists;
+    mutable std::vector<RenderCommandList> m_parallel_command_lists; // NOSONAR - PIMPL-side wrapper cache rebuilt by GetParallelCommandLists() on the render thread
 };
 
 } // namespace Methane::Graphics::Rhi

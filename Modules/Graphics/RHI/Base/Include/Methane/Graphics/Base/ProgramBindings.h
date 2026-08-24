@@ -133,8 +133,8 @@ private:
     ArgumentBindings                     m_binding_by_argument;
     ResourceStatesByAccess               m_transition_resource_states_by_access;
     ResourceRefsByAccess                 m_resource_refs_by_access;
-    mutable Ptr<Rhi::IResourceBarriers>  m_resource_state_transition_barriers_ptr;
-    mutable Ptrs<Rhi::IBuffer>           m_retained_root_constant_buffer_ptrs;
+    mutable Ptr<Rhi::IResourceBarriers>  m_resource_state_transition_barriers_ptr; // NOSONAR - per-bindings instance, applied by the single command list which owns it
+    mutable Ptrs<Rhi::IBuffer>           m_retained_root_constant_buffer_ptrs;     // NOSONAR - per-bindings instance, applied by the single command list which owns it
     Data::Index                          m_bindings_index = 0u; // index of this program bindings object between all program bindings of the program
 };
 

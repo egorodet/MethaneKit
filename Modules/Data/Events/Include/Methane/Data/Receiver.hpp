@@ -44,7 +44,7 @@ public:
         : m_connected_emitter_refs(other.m_connected_emitter_refs)
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         ConnectEmitters();
     }
 
@@ -52,14 +52,14 @@ public:
         : m_connected_emitter_refs(other.DisconnectEmitters())
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         ConnectEmitters();
     }
 
     ~Receiver() override // NOSONAR
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         DisconnectEmitters();
     }
 
@@ -69,7 +69,7 @@ public:
         if (this == std::addressof(other))
             return *this;
 
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         DisconnectEmitters();
         m_connected_emitter_refs = other.m_connected_emitter_refs;
         ConnectEmitters();
@@ -82,7 +82,7 @@ public:
         if (this == std::addressof(other))
             return *this;
 
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         DisconnectEmitters();
         m_connected_emitter_refs = std::move(other.m_connected_emitter_refs);
         ConnectEmitters();
@@ -96,7 +96,7 @@ protected:
     void OnConnected(IEmitter<EventType>& emitter) noexcept
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         if (FindConnectedEmitter(emitter) != m_connected_emitter_refs.end())
             return;
 
@@ -106,7 +106,7 @@ protected:
     void OnDisconnected(IEmitter<EventType>& emitter) noexcept
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_emitter_refs_mutex);
+        std::lock_guard lock(m_connected_emitter_refs_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_emitter_refs_mutex declaration
         const auto connected_emitter_ref_it = FindConnectedEmitter(emitter);
         if (connected_emitter_ref_it == m_connected_emitter_refs.end())
             return;

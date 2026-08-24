@@ -185,7 +185,7 @@ private:
     using NativeQueryHeaps = std::array<wrl::ComPtr<ID3D12QueryHeap>, D3D12_QUERY_HEAP_TYPE_COPY_QUEUE_TIMESTAMP + 1>;
 
     DescriptorManager::Settings m_descriptor_manager_init_settings{ true, {}, {} };
-    mutable NativeQueryHeaps m_query_heaps;
+    mutable NativeQueryHeaps m_query_heaps; // NOSONAR - lazily created per query heap type on the render thread
 };
 
 } // namespace Methane::Graphics::DirectX

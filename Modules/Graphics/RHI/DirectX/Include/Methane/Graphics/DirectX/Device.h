@@ -62,7 +62,7 @@ public:
 private:
     const wrl::ComPtr<IDXGIAdapter>   m_adapter_cptr;
     const D3D_FEATURE_LEVEL           m_feature_level;
-    mutable NativeFeatureOptions5     m_feature_options_5;
+    mutable NativeFeatureOptions5     m_feature_options_5; // NOSONAR - device capabilities queried once during device initialization
     mutable wrl::ComPtr<ID3D12Device> m_device_cptr;
 #ifdef _DEBUG
     mutable DWORD                     m_debug_message_callback_cookie = 0U;

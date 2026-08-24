@@ -67,18 +67,18 @@ void CommandQueueTracking::InitializeTimestampQueryPool() // NOSONAR - m_timesta
 {
     META_FUNCTION_TASK();
     constexpr uint32_t g_max_timestamp_queries_count_per_frame = 1000;
-    m_timestamp_query_pool_ptr = Rhi::ITimestampQueryPool::Create(*this, g_max_timestamp_queries_count_per_frame);
-    if (!m_timestamp_query_pool_ptr)
+    m_timestamp_query_pool_ptr = Rhi::ITimestampQueryPool::Create(*this, g_max_timestamp_queries_count_per_frame); // NOSONAR - guarded by m_timestamp_query_pool_mutex in the caller
+    if (!m_timestamp_query_pool_ptr) // NOSONAR - guarded by m_timestamp_query_pool_mutex in the caller
         return;
 
-    const Rhi::ITimestampQueryPool::CalibratedTimestamps& calibrated_timestamps = m_timestamp_query_pool_ptr->
+    const Rhi::ITimestampQueryPool::CalibratedTimestamps& calibrated_timestamps = m_timestamp_query_pool_ptr-> // NOSONAR - guarded by m_timestamp_query_pool_mutex in the caller
         GetCalibratedTimestamps();
     InitializeTracyGpuContext(
         Tracy::GpuContext::Settings(
             ConvertSystemGraphicsApiToTracyGpuContextType(Rhi::ISystem::GetNativeApi()),
             calibrated_timestamps.cpu_ts,
             calibrated_timestamps.gpu_ts,
-            Data::ConvertFrequencyToTickPeriod(m_timestamp_query_pool_ptr->GetGpuFrequency())
+            Data::ConvertFrequencyToTickPeriod(m_timestamp_query_pool_ptr->GetGpuFrequency()) // NOSONAR - guarded by m_timestamp_query_pool_mutex in the caller
         )
     );
 }
