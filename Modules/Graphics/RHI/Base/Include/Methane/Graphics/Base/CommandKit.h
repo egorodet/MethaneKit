@@ -75,6 +75,9 @@ private:
 
     // Command queue, lists, fences and list sets are lazily created by the const getters above,
     // which are reachable from resource upload paths running on parallel-rendering worker threads.
+    // All accesses to the mutable members below are made with m_mutex locked, either by the public
+    // getter itself or by its caller when the access is made from a *Unlocked() helper. Static
+    // analysis can not follow the latter, so those accesses are marked with NOSONAR in CommandKit.cpp.
     mutable TracyLockable(std::mutex, m_mutex);
     mutable Ptr<Rhi::ICommandQueue> m_cmd_queue_ptr;
     mutable Ptrs<Rhi::ICommandList> m_cmd_list_ptrs;

@@ -119,12 +119,13 @@ Rhi::ICommandQueue& CommandKit::GetQueue() const
 Rhi::ICommandQueue& CommandKit::GetQueueUnlocked() const
 {
     META_FUNCTION_TASK();
-    if (m_cmd_queue_ptr)
-        return *m_cmd_queue_ptr;
+    // NOSONAR - m_mutex is locked by the caller (see note in CommandKit.h)
+    if (m_cmd_queue_ptr)         // NOSONAR
+        return *m_cmd_queue_ptr; // NOSONAR
 
-    m_cmd_queue_ptr = Rhi::ICommandQueue::Create(m_context, m_cmd_list_type);
-    m_cmd_queue_ptr->SetName(fmt::format("{} Command Queue", GetName()));
-    return *m_cmd_queue_ptr;
+    m_cmd_queue_ptr = Rhi::ICommandQueue::Create(m_context, m_cmd_list_type); // NOSONAR
+    m_cmd_queue_ptr->SetName(fmt::format("{} Command Queue", GetName()));     // NOSONAR
+    return *m_cmd_queue_ptr;                                                  // NOSONAR
 }
 
 bool CommandKit::HasList(Rhi::CommandListId cmd_list_id) const noexcept
@@ -155,10 +156,11 @@ Rhi::ICommandList& CommandKit::GetListUnlocked(Rhi::CommandListId cmd_list_id) c
     META_FUNCTION_TASK();
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
     META_CHECK_LESS_DESCR(cmd_list_index, g_max_cmd_lists_count, "no more than 32 command lists are supported in one command kit");
-    if (cmd_list_index >= m_cmd_list_ptrs.size())
-        m_cmd_list_ptrs.resize(cmd_list_index + 1);
+    // NOSONAR - m_mutex is locked by the caller (see note in CommandKit.h)
+    if (cmd_list_index >= m_cmd_list_ptrs.size())   // NOSONAR
+        m_cmd_list_ptrs.resize(cmd_list_index + 1); // NOSONAR
 
-    Ptr<Rhi::ICommandList>& cmd_list_ptr = m_cmd_list_ptrs[cmd_list_index];
+    Ptr<Rhi::ICommandList>& cmd_list_ptr = m_cmd_list_ptrs[cmd_list_index]; // NOSONAR
     if (cmd_list_ptr)
         return *cmd_list_ptr;
 
@@ -269,7 +271,7 @@ void CommandKit::ExecuteListSetAndWaitForCompletion(Rhi::CommandListIdSpan cmd_l
 CommandKit::CommandListIndex CommandKit::GetCommandListIndexById(Rhi::CommandListId cmd_list_id) const noexcept
 {
     META_FUNCTION_TASK();
-    const auto [it, success] = m_cmd_list_index_by_id.try_emplace(cmd_list_id, static_cast<CommandListIndex>(m_cmd_list_index_by_id.size()));
+    const auto [it, success] = m_cmd_list_index_by_id.try_emplace(cmd_list_id, static_cast<CommandListIndex>(m_cmd_list_index_by_id.size())); // NOSONAR - m_mutex is locked by the caller (see note in CommandKit.h)
     return it->second;
 }
 

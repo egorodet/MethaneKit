@@ -78,7 +78,7 @@ public:
     const Rhi::IObjectRegistry& GetObjectRegistry() const noexcept override             { return m_objects_cache; }
     void                        RequestDeferredAction(DeferredAction action) const noexcept override;
     void                        CompleteInitialization() override;
-    bool                        IsCompletingInitialization() const noexcept override    { return m_is_completing_initialization; }
+    bool                        IsCompletingInitialization() const noexcept override    { return m_is_completing_initialization.load(); }
     void                        WaitForGpu(WaitFor wait_for) override;
     void                        Reset(Rhi::IDevice& device) override;
     void                        Reset() override;
@@ -94,7 +94,7 @@ public:
     // IObject interface
     bool SetName(std::string_view name) override;
 
-    DeferredAction           GetRequestedAction() const noexcept { return m_requested_action.load(std::memory_order_acquire); }
+    DeferredAction           GetRequestedAction() const noexcept { return m_requested_action.load(); }
     Ptr<Device>              GetBaseDevicePtr() const noexcept   { return m_device_ptr; }
     Device&                  GetBaseDevice();
     const Device&            GetBaseDevice() const;
@@ -129,11 +129,20 @@ private:
     mutable CommandKitPtrByType        m_default_command_kit_ptrs;
     mutable CommandKitByQueue          m_default_command_kit_ptr_by_queue;
 
-    // Atomic because RequestDeferredAction() escalates the pending action from any thread:
-    // IBuffer/ITexture::SetData() and IProgramArgumentBinding::SetRootConstant() are called
-    // concurrently from parallel-rendering worker threads.
+    // Both members below are accessed from multiple threads and use the default sequentially
+    // consistent memory ordering: every access happens either once per frame or on a cold
+    // initialization path, so the stronger ordering costs nothing measurable here while keeping
+    // the synchronization trivial to reason about.
+
+    // RequestDeferredAction() escalates the pending action from any thread: IBuffer/ITexture::SetData()
+    // and IProgramArgumentBinding::SetRootConstant() are called concurrently from parallel-rendering
+    // worker threads.
     mutable std::atomic<DeferredAction> m_requested_action{ DeferredAction::None };
-    mutable bool                        m_is_completing_initialization = false; // NOSONAR - only written by CompleteInitialization() on the render thread
+
+    // CompleteInitialization() writes this re-entrancy guard on the render thread, while the const
+    // IsCompletingInitialization() getter is a part of the public IContext API and may be queried
+    // from resource update callbacks running on other threads.
+    mutable std::atomic_bool            m_is_completing_initialization{ false };
 };
 
 } // namespace Methane::Graphics::Base

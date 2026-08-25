@@ -74,28 +74,28 @@ void Context::RequestDeferredAction(DeferredAction action) const noexcept
     META_FUNCTION_TASK();
     // Escalate the pending action to the strongest one requested by any thread.
     // DeferredAction values are ordered None < UploadResources < CompleteInitialization.
-    DeferredAction prev_action = m_requested_action.load(std::memory_order_acquire);
-    while (prev_action < action &&
-           !m_requested_action.compare_exchange_weak(prev_action, action,
-                                                     std::memory_order_acq_rel,
-                                                     std::memory_order_acquire))
-    { }
+    DeferredAction prev_action = m_requested_action.load();
+    while (prev_action < action && !m_requested_action.compare_exchange_weak(prev_action, action))
+    {
+        // Retry with the action escalated by a concurrent thread, which
+        // compare_exchange_weak() has just reloaded into 'prev_action'.
+    }
 }
 
 void Context::CompleteInitialization()
 {
     META_FUNCTION_TASK();
-    if (m_is_completing_initialization)
+    if (m_is_completing_initialization.load())
         return;
 
-    m_is_completing_initialization = true;
+    m_is_completing_initialization.store(true);
     META_LOG("Complete initialization of context '{}'", GetName());
 
     UploadResourcesAndNotify();
     GetDescriptorManager().CompleteInitialization();
 
-    m_requested_action.store(DeferredAction::None, std::memory_order_release);
-    m_is_completing_initialization = false;
+    m_requested_action.store(DeferredAction::None);
+    m_is_completing_initialization.store(false);
 }
 
 void Context::WaitForGpu(WaitFor wait_for)
@@ -359,7 +359,7 @@ bool Context::UploadResourcesAndNotify()
 void Context::PerformRequestedAction()
 {
     META_FUNCTION_TASK();
-    DeferredAction requested_action = m_requested_action.load(std::memory_order_acquire);
+    DeferredAction requested_action = m_requested_action.load();
     switch(requested_action)
     {
     case DeferredAction::None:
@@ -378,9 +378,7 @@ void Context::PerformRequestedAction()
     }
     // Clear only the action which was actually performed: another thread may have escalated the
     // request while it was running, and that stronger request has to survive until the next frame.
-    m_requested_action.compare_exchange_strong(requested_action, DeferredAction::None,
-                                               std::memory_order_acq_rel,
-                                               std::memory_order_relaxed);
+    m_requested_action.compare_exchange_strong(requested_action, DeferredAction::None);
 }
 
 void Context::SetDevice(Device& device)
