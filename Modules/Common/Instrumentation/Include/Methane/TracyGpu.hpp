@@ -126,12 +126,17 @@ public:
         }
     }
 
+    static uint8_t GetGpuCtxCounter()
+    {
+        const uint32_t ctx_id = tracy::GetGpuCtxCounter().fetch_add(1, std::memory_order_relaxed);
+        META_CHECK_LESS_DESCR(ctx_id, 255, "Tracy GPU context count is exceeding the maximum 255.");
+        return static_cast<uint8_t>(ctx_id);
+    }
+
     explicit GpuContext(const Settings& settings)
-        : m_id(tracy::GetGpuCtxCounter().fetch_add( 1, std::memory_order_relaxed ))
+        : m_id(GetGpuCtxCounter())
         , m_prev_calibration_cpu_timestamp(settings.cpu_timestamp)
     {
-        META_CHECK_LESS_DESCR(m_id, 255, "Tracy GPU context count is exceeding the maximum 255.");
-
         auto item = tracy::Profiler::QueueSerial();
         tracy::MemWrite(&item->hdr.type,              tracy::QueueType::GpuNewContext);
         tracy::MemWrite(&item->gpuNewContext.cpuTime, settings.cpu_ref_timestamp);
