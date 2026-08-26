@@ -91,7 +91,7 @@ ProgramArgumentBinding::ProgramArgumentBinding(const ProgramArgumentBinding& oth
     : Base::ProgramArgumentBinding(other)
     , m_settings_mt(other.m_settings_mt)
     , m_mtl_render_stages(other.m_mtl_render_stages)
-    , m_mtl_resource_views(other.m_mtl_resource_views)
+    , m_mtl_resource_views(other.GetNativeResourceViews())
 {
 }
 
