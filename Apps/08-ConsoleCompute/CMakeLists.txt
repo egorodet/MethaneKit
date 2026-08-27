@@ -37,12 +37,20 @@ set_target_properties(${TARGET}
         FOLDER Apps
 )
 
+get_target_property(METHANE_PREREQUISITE_MODULES MethaneKit PREREQUISITE_MODULES)
+add_prerequisite_binaries(${TARGET} "${METHANE_PREREQUISITE_MODULES}" "$<TARGET_FILE_DIR:${TARGET}>" TRUE)
+
+if(METHANE_GFX_API EQUAL METHANE_GFX_METAL)
+    get_target_property(TARGET_METAL_LIBRARIES ${TARGET} METAL_LIBRARIES)
+    install(
+        FILES ${TARGET_METAL_LIBRARIES}
+        DESTINATION Apps
+    )
+endif()
+
 install(
     TARGETS ${TARGET}
     RUNTIME
     DESTINATION Apps
     COMPONENT Runtime
 )
-
-get_target_property(METHANE_PREREQUISITE_MODULES MethaneKit PREREQUISITE_MODULES)
-add_prerequisite_binaries(${TARGET} "${METHANE_PREREQUISITE_MODULES}" "$<TARGET_FILE_DIR:${TARGET}>" TRUE)
