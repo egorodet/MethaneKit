@@ -101,6 +101,7 @@ private:
     Ptr<Rhi::ITimestampQueryPool> GetInitializedTimestampQueryPoolPtr() const;
     void CompleteExecutionSafely();
     void WaitForExecution() noexcept;
+    bool IsExecutingCommandListsQueueEmpty() const;
     bool IsFrontListExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
     bool IsExecutingOnFrameIndex(const Opt<Data::Index>& frame_index) const noexcept;
 

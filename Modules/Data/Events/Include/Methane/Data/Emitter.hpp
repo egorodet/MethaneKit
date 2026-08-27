@@ -91,7 +91,7 @@ public:
     void Connect(Receiver<EventType>& receiver, int32_t priority = 0) noexcept final
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_receivers_mutex);
+        std::lock_guard lock(m_connected_receivers_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_receivers_mutex declaration
         if (FindConnectedReceiver(receiver) != m_connected_receivers.end())
             return;
 
@@ -109,7 +109,7 @@ public:
     void Disconnect(Receiver<EventType>& receiver) noexcept final
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_receivers_mutex);
+        std::lock_guard lock(m_connected_receivers_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_receivers_mutex declaration
 
         const auto connected_receiver_it = FindConnectedReceiver(receiver);
         if (connected_receiver_it == m_connected_receivers.end())
@@ -142,7 +142,7 @@ protected:
     void Emit(FuncType&& func_ptr, ArgTypes&&... args)
     {
         META_FUNCTION_TASK();
-        std::lock_guard lock(m_connected_receivers_mutex);
+        std::lock_guard lock(m_connected_receivers_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_receivers_mutex declaration
 
         // Additional receivers may be non-empty before emitting connected receiver calls
         // only in case when current emit is called during another emitted callback for the same emitter
@@ -216,7 +216,7 @@ private:
     inline void CleanupConnectedReceivers() noexcept
     {
         // Erase receivers disconnected during emit cycle from the connected receivers
-        std::lock_guard lock(m_connected_receivers_mutex);
+        std::lock_guard lock(m_connected_receivers_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_receivers_mutex declaration
         for(auto connected_receiver_it  = m_connected_receivers.begin(); connected_receiver_it != m_connected_receivers.end();)
         {
             if (connected_receiver_it->first)
@@ -228,7 +228,7 @@ private:
 
     inline void ConnectReceivers() noexcept
     {
-        std::lock_guard lock(m_connected_receivers_mutex);
+        std::lock_guard lock(m_connected_receivers_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_receivers_mutex declaration
         for(const ReceiverAndPriority& receiver_and_priority : m_connected_receivers)
         {
             if (receiver_and_priority.first)
@@ -239,7 +239,7 @@ private:
     inline auto DisconnectReceivers() noexcept
     {
         // Move connected receivers so that OnDisconnected callbacks are not processed (m_connected_receivers would be empty)
-        std::lock_guard lock(m_connected_receivers_mutex);
+        std::lock_guard lock(m_connected_receivers_mutex); // NOSONAR - recursive mutex is required, see comment at m_connected_receivers_mutex declaration
         const auto connected_receivers = std::move(m_connected_receivers);
         for(const ReceiverAndPriority& receiver_and_priority : connected_receivers)
         {
@@ -254,6 +254,9 @@ private:
     bool                                m_is_emitting = false;
     std::vector<ReceiverAndPriority>    m_connected_receivers;
     std::vector<ReceiverAndPriority>    m_additional_connected_receivers;
+    // Mutex has to be recursive: Emit() holds this lock while calling receiver callbacks,
+    // which may re-enter Connect(), Disconnect() or a nested Emit() on the same emitter,
+    // and Emit() itself re-locks it in CleanupConnectedReceivers().
 #if defined(__GNUG__) && !defined(__clang__)
     // GCC fails with internal compiler error: Segmentation fault
     std::recursive_mutex                m_connected_receivers_mutex;

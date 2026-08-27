@@ -87,6 +87,8 @@ bool CommandKit::SetName(std::string_view name)
     if (!Object::SetName(name))
         return false;
 
+    std::scoped_lock lock_guard(m_mutex);
+
     if (m_cmd_queue_ptr)
         m_cmd_queue_ptr->SetName(fmt::format("{} Command Queue", GetName()));
 
@@ -110,17 +112,26 @@ bool CommandKit::SetName(std::string_view name)
 Rhi::ICommandQueue& CommandKit::GetQueue() const
 {
     META_FUNCTION_TASK();
-    if (m_cmd_queue_ptr)
-        return *m_cmd_queue_ptr;
+    std::scoped_lock lock_guard(m_mutex);
+    return GetQueueUnlocked();
+}
 
-    m_cmd_queue_ptr = Rhi::ICommandQueue::Create(m_context, m_cmd_list_type);
-    m_cmd_queue_ptr->SetName(fmt::format("{} Command Queue", GetName()));
-    return *m_cmd_queue_ptr;
+Rhi::ICommandQueue& CommandKit::GetQueueUnlocked() const
+{
+    META_FUNCTION_TASK();
+    // NOSONAR - m_mutex is locked by the caller (see note in CommandKit.h)
+    if (m_cmd_queue_ptr)         // NOSONAR
+        return *m_cmd_queue_ptr; // NOSONAR
+
+    m_cmd_queue_ptr = Rhi::ICommandQueue::Create(m_context, m_cmd_list_type); // NOSONAR
+    m_cmd_queue_ptr->SetName(fmt::format("{} Command Queue", GetName()));     // NOSONAR
+    return *m_cmd_queue_ptr;                                                  // NOSONAR
 }
 
 bool CommandKit::HasList(Rhi::CommandListId cmd_list_id) const noexcept
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
     return cmd_list_index < m_cmd_list_ptrs.size() && m_cmd_list_ptrs[cmd_list_index];
 }
@@ -128,6 +139,7 @@ bool CommandKit::HasList(Rhi::CommandListId cmd_list_id) const noexcept
 bool CommandKit::HasListWithState(Rhi::CommandListState cmd_list_state, Rhi::CommandListId cmd_list_id) const noexcept
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
     return cmd_list_index < m_cmd_list_ptrs.size() && m_cmd_list_ptrs[cmd_list_index] && m_cmd_list_ptrs[cmd_list_index]->GetState() == cmd_list_state;
 }
@@ -135,21 +147,29 @@ bool CommandKit::HasListWithState(Rhi::CommandListState cmd_list_state, Rhi::Com
 Rhi::ICommandList& CommandKit::GetList(Rhi::CommandListId cmd_list_id = 0U) const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
+    return GetListUnlocked(cmd_list_id);
+}
+
+Rhi::ICommandList& CommandKit::GetListUnlocked(Rhi::CommandListId cmd_list_id) const
+{
+    META_FUNCTION_TASK();
     const CommandListIndex cmd_list_index = GetCommandListIndexById(cmd_list_id);
     META_CHECK_LESS_DESCR(cmd_list_index, g_max_cmd_lists_count, "no more than 32 command lists are supported in one command kit");
-    if (cmd_list_index >= m_cmd_list_ptrs.size())
-        m_cmd_list_ptrs.resize(cmd_list_index + 1);
+    // NOSONAR - m_mutex is locked by the caller (see note in CommandKit.h)
+    if (cmd_list_index >= m_cmd_list_ptrs.size())   // NOSONAR
+        m_cmd_list_ptrs.resize(cmd_list_index + 1); // NOSONAR
 
-    Ptr<Rhi::ICommandList>& cmd_list_ptr = m_cmd_list_ptrs[cmd_list_index];
+    Ptr<Rhi::ICommandList>& cmd_list_ptr = m_cmd_list_ptrs[cmd_list_index]; // NOSONAR
     if (cmd_list_ptr)
         return *cmd_list_ptr;
 
     switch (m_cmd_list_type)
     {
     using enum Rhi::CommandListType;
-    case Transfer: cmd_list_ptr = GetQueue().CreateTransferCommandList(); break;
-    case Render:   cmd_list_ptr = RenderCommandList::CreateForSynchronization(GetQueue()); break;
-    case Compute:  cmd_list_ptr = GetQueue().CreateComputeCommandList(); break;
+    case Transfer: cmd_list_ptr = GetQueueUnlocked().CreateTransferCommandList(); break;
+    case Render:   cmd_list_ptr = RenderCommandList::CreateForSynchronization(GetQueueUnlocked()); break;
+    case Compute:  cmd_list_ptr = GetQueueUnlocked().CreateComputeCommandList(); break;
     default: META_UNEXPECTED(m_cmd_list_type);
     }
 
@@ -187,6 +207,8 @@ Rhi::ICommandListSet& CommandKit::GetListSet(Rhi::CommandListIdSpan cmd_list_ids
 {
     META_FUNCTION_TASK();
     META_CHECK_NOT_EMPTY(cmd_list_ids);
+    std::scoped_lock lock_guard(m_mutex);
+
     const CommandListSetId cmd_list_set_id = GetCommandListSetId(cmd_list_ids, frame_index_opt);
 
     Ptr<Rhi::ICommandListSet>& cmd_list_set_ptr = m_cmd_list_set_by_id[cmd_list_set_id];
@@ -196,7 +218,7 @@ Rhi::ICommandListSet& CommandKit::GetListSet(Rhi::CommandListIdSpan cmd_list_ids
     Refs<Rhi::ICommandList> command_list_refs;
     for(Rhi::CommandListId cmd_list_id : cmd_list_ids)
     {
-        command_list_refs.emplace_back(GetList(cmd_list_id));
+        command_list_refs.emplace_back(GetListUnlocked(cmd_list_id));
     }
 
     cmd_list_set_ptr = Rhi::ICommandListSet::Create(command_list_refs, frame_index_opt);
@@ -206,6 +228,8 @@ Rhi::ICommandListSet& CommandKit::GetListSet(Rhi::CommandListIdSpan cmd_list_ids
 Rhi::IFence& CommandKit::GetFence(Rhi::CommandListId fence_id) const
 {
     META_FUNCTION_TASK();
+    std::scoped_lock lock_guard(m_mutex);
+
     const uint32_t fence_index = GetCommandListIndexById(fence_id);
     if (fence_index >= m_fence_ptrs.size())
         m_fence_ptrs.resize(fence_index + 1);
@@ -215,7 +239,7 @@ Rhi::IFence& CommandKit::GetFence(Rhi::CommandListId fence_id) const
     if (fence_ptr)
         return *fence_ptr;
 
-    fence_ptr = Rhi::IFence::Create(GetQueue());
+    fence_ptr = Rhi::IFence::Create(GetQueueUnlocked());
     fence_ptr->SetName(fmt::format("{} Fence {}", GetName(), fence_id));
     return *fence_ptr;
 }
@@ -229,9 +253,9 @@ void CommandKit::ExecuteListSet(Rhi::CommandListIdSpan cmd_list_ids, Opt<Data::I
 void CommandKit::ExecuteListSetAndWaitForCompletion(Rhi::CommandListIdSpan cmd_list_ids, Opt<Data::Index> frame_index_opt) const
 {
     META_FUNCTION_TASK();
-    std::mutex                  execution_wait_mutex;
-    size_t                      executing_cmd_list_count = cmd_list_ids.size();
-    std::condition_variable_any executing_cmd_list_set_condition_var;
+    std::mutex              execution_wait_mutex;
+    size_t                  executing_cmd_list_count = cmd_list_ids.size();
+    std::condition_variable executing_cmd_list_set_condition_var;
     GetQueue().Execute(GetListSet(cmd_list_ids, frame_index_opt),
                        [&executing_cmd_list_count, &execution_wait_mutex, &executing_cmd_list_set_condition_var](const Rhi::ICommandList&)
                        {
@@ -247,7 +271,7 @@ void CommandKit::ExecuteListSetAndWaitForCompletion(Rhi::CommandListIdSpan cmd_l
 CommandKit::CommandListIndex CommandKit::GetCommandListIndexById(Rhi::CommandListId cmd_list_id) const noexcept
 {
     META_FUNCTION_TASK();
-    const auto [it, success] = m_cmd_list_index_by_id.try_emplace(cmd_list_id, static_cast<CommandListIndex>(m_cmd_list_index_by_id.size()));
+    const auto [it, success] = m_cmd_list_index_by_id.try_emplace(cmd_list_id, static_cast<CommandListIndex>(m_cmd_list_index_by_id.size())); // NOSONAR - m_mutex is locked by the caller (see note in CommandKit.h)
     return it->second;
 }
 

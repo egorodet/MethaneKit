@@ -74,7 +74,7 @@ private:
     const Type          m_type;
     const Context&      m_context;
     const Settings      m_settings;
-    mutable ArgNamesSet m_cached_arg_names;
+    mutable ArgNamesSet m_cached_arg_names; // NOSONAR - filled only by shader reflection during single-threaded program creation
 };
 
 } // namespace Methane::Graphics::Base

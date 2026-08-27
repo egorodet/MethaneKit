@@ -97,8 +97,8 @@ public:
     constexpr explicit operator bool() const noexcept { return m_value != M{}; }
     constexpr explicit operator M() const noexcept    { return m_value; }
 
-    constexpr EnumMask& SetBitOn(Bit bit) noexcept          { return *this |= bit; }
-    constexpr EnumMask& SetBitOff(Bit bit) noexcept         { return *this &= ~EnumMask(bit); }
+    constexpr EnumMask& SetBitOn(Bit bit) noexcept          { *this |= bit;             return *this; }
+    constexpr EnumMask& SetBitOff(Bit bit) noexcept         { *this &= ~EnumMask(bit);  return *this; }
     constexpr EnumMask& SetBit(Bit bit, bool on) noexcept   { return on ? SetBitOn(bit) : SetBitOff(bit); }
     constexpr bool HasBits(EnumMask mask) const noexcept    { return mask.m_value ? ((m_value & mask.GetValue()) == mask.GetValue()) : true; }
     constexpr bool HasBit(Bit bit) const noexcept           { return HasBits(EnumMask(bit)); }

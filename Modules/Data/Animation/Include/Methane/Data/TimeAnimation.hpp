@@ -38,7 +38,7 @@ class TimeAnimation
     : public Animation
 {
 public:
-    TimeAnimation(const FunctorType& update_function, double duration_sec = std::numeric_limits<double>::max())
+    explicit TimeAnimation(const FunctorType& update_function, double duration_sec = std::numeric_limits<double>::max())
         : Animation(duration_sec)
         , m_update_function(update_function)
     { }

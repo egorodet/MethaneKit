@@ -49,9 +49,9 @@ TextureSettings TextureSettings::ForImage(const Dimensions& dimensions, const Op
     TextureSettings settings;
 
     if (dimensions.GetHeight() == 1)
-        settings.dimension_type = array_length_opt ? Tex1DArray : Tex1D;
+        settings.dimension_type = array_length_opt.has_value() ? Tex1DArray : Tex1D;
     else if (dimensions.GetDepth() == 1)
-        settings.dimension_type = array_length_opt ? Tex2DArray : Tex2D;
+        settings.dimension_type = array_length_opt.has_value() ? Tex2DArray : Tex2D;
     else
         settings.dimension_type = Tex3D;
 
@@ -72,7 +72,7 @@ TextureSettings TextureSettings::ForCubeImage(uint32_t dimension_size, const Opt
 
     TextureSettings settings;
     settings.type           = usage.HasAnyBit(ResourceUsage::RenderTarget) ? TextureType::RenderTarget : TextureType::Image;
-    settings.dimension_type = array_length_opt ? TextureDimensionType::CubeArray : TextureDimensionType::Cube;
+    settings.dimension_type = array_length_opt.has_value() ? TextureDimensionType::CubeArray : TextureDimensionType::Cube;
     settings.dimensions     = Dimensions(dimension_size, dimension_size, 6U);
     settings.array_length   = array_length_opt.value_or(1U);
     settings.pixel_format   = pixel_format;

@@ -71,7 +71,7 @@ private:
     Ref<RootConstantStorage> m_storage_ref;  // storage reference
     Range                    m_buffer_range; // aligned memory range
     Data::Size               m_data_size;    // unaligned original size
-    mutable bool             m_is_initialized = false;
+    mutable bool             m_is_initialized = false; // NOSONAR - one accessor per argument binding, never shared between threads
 };
 
 class RootConstantStorage

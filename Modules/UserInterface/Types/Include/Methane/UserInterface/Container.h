@@ -42,7 +42,7 @@ class Container
     , public Data::Emitter<IContainerCallback>
 {
 public:
-    Container(Context& ui_context, const UnitRect& ui_rect = {}, const Ptrs<Item>& children = {});
+    explicit Container(Context& ui_context, const UnitRect& ui_rect = {}, const Ptrs<Item>& children = {});
 
     const Ptrs<Item>& GetChildren() const noexcept { return m_children; }
 

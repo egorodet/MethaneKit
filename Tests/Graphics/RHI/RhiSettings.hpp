@@ -49,7 +49,7 @@ inline Rhi::RenderContextSettings GetRenderContextSettings()
     };
 }
 
-inline Rhi::RenderPatternSettings GetRenderPatternSettings()
+inline Rhi::RenderPatternSettings GetRenderPatternSettings(bool with_stencil_attachment = false)
 {
     return Rhi::RenderPatternSettings
     {
@@ -67,7 +67,14 @@ inline Rhi::RenderPatternSettings GetRenderPatternSettings()
             Rhi::RenderPassAttachment::StoreAction::Store,
             0.F
         },
-        .stencil_attachment = std::nullopt,
+        .stencil_attachment = with_stencil_attachment
+                            ? Opt<Rhi::RenderPassStencilAttachment>(Rhi::RenderPassStencilAttachment{
+                                  2U, PixelFormat::Depth32Float, 1U,
+                                  Rhi::RenderPassAttachment::LoadAction::Clear,
+                                  Rhi::RenderPassAttachment::StoreAction::Store,
+                                  0U
+                              })
+                            : std::nullopt,
         .shader_access = Rhi::RenderPassAccessMask{ Rhi::RenderPassAccess::ShaderResources },
         .is_final_pass = true
     };
@@ -77,6 +84,7 @@ struct RenderPassResources
 {
     Rhi::Texture frame_buffer_texture;
     Rhi::Texture depth_stencil_texture;
+    Rhi::Texture stencil_texture;
     Rhi::RenderPassSettings settings;
 };
 
@@ -97,6 +105,20 @@ inline RenderPassResources GetRenderPassResources(const Rhi::RenderPattern& rend
     resources.settings.frame_size = frame_size;
     resources.settings.attachments.push_back(resources.frame_buffer_texture.GetTextureView());
     resources.settings.attachments.push_back(resources.depth_stencil_texture.GetTextureView());
+
+    // Separate stencil attachment texture is added only when the render pattern declares a stencil attachment,
+    // so that its index in the render pass attachments matches RenderPassStencilAttachment::attachment_index.
+    if (const Opt<Rhi::RenderPassStencilAttachment>& stencil_attachment = render_pattern.GetSettings().stencil_attachment;
+        stencil_attachment)
+    {
+        resources.stencil_texture = render_pattern.GetRenderContext().CreateTexture(
+                                        Rhi::TextureSettings::ForDepthStencil(
+                                            Dimensions(frame_size),
+                                            stencil_attachment->format,
+                                            DepthStencilValues(0.f, 0.f),
+                                            Rhi::ResourceUsageMask({ Rhi::ResourceUsage::RenderTarget })));
+        resources.settings.attachments.push_back(resources.stencil_texture.GetTextureView());
+    }
     return resources;
 }
 

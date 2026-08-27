@@ -45,7 +45,7 @@ class Item
     , public std::enable_shared_from_this<Item>
 {
 public:
-    Item(Context& ui_context, const UnitRect& ui_rect = {});
+    explicit Item(Context& ui_context, const UnitRect& ui_rect = {});
 
     Ptr<Item>        GetPtr()                                           { return shared_from_this(); }
     const Context&   GetUIContext() const noexcept                      { return m_ui_context; }

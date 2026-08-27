@@ -28,21 +28,39 @@ Methane graphics type functions implementation.
 #include <Methane/Instrumentation.h>
 #include <Methane/Checks.hpp>
 
+#include <algorithm>
+#include <cstdint>
+
 namespace Methane::Graphics
 {
+
+// Scissor rect of a frame rect is an intersection of the [offset, offset + dimension_size) range of that rect
+// with the [0, render_attachment_size) range of the render attachment. Both bounds are computed in a signed
+// 64-bit type, so that a frame rect moved partially or completely outside of the render attachment results in
+// a clipped or empty scissor rect, instead of an unsigned integer underflow of its offset or extent.
+// The underflowed extent used to be rejected by the graphics API validation, for example a UI text block
+// laid out to the right of a narrow window produced a huge scissor extent close to 2^32.
+
+[[nodiscard]]
+inline uint32_t GetNormalizedDimensionOffset(int32_t offset, uint32_t render_attachment_size)
+{
+    return static_cast<uint32_t>(std::clamp<int64_t>(offset, 0, render_attachment_size));
+}
 
 [[nodiscard]]
 inline uint32_t GetNormalizedDimensionSize(int32_t offset, uint32_t dimension_size, uint32_t render_attachment_size)
 {
-    return std::min(dimension_size + offset, render_attachment_size) - (offset >= 0 ? offset : 0);
+    const int64_t range_begin = std::max<int64_t>(offset, 0);
+    const int64_t range_end   = std::min<int64_t>(static_cast<int64_t>(offset) + dimension_size, render_attachment_size);
+    return range_end > range_begin ? static_cast<uint32_t>(range_end - range_begin) : 0U;
 }
 
 ScissorRect GetFrameScissorRect(const FrameRect& frame_rect, const FrameSize& render_attachment_size)
 {
     META_FUNCTION_TASK();
     return {
-        ScissorRect::Point(static_cast<uint32_t>(std::max(0, frame_rect.origin.GetX())),
-                           static_cast<uint32_t>(std::max(0, frame_rect.origin.GetY()))),
+        ScissorRect::Point(GetNormalizedDimensionOffset(frame_rect.origin.GetX(), render_attachment_size.GetWidth()),
+                           GetNormalizedDimensionOffset(frame_rect.origin.GetY(), render_attachment_size.GetHeight())),
         ScissorRect::Size(GetNormalizedDimensionSize(frame_rect.origin.GetX(), frame_rect.size.GetWidth(),  render_attachment_size.GetWidth()),
                           GetNormalizedDimensionSize(frame_rect.origin.GetY(), frame_rect.size.GetHeight(), render_attachment_size.GetHeight()))
     };

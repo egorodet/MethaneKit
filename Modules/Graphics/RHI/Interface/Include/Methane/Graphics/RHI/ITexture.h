@@ -46,10 +46,10 @@ class TextureView
     : public ResourceView
 {
 public:
-    TextureView(ITexture& texture,
-                const SubResource::Index& subresource_index = {},
-                const SubResource::Count& subresource_count = {},
-                Opt<TextureDimensionType> texture_dimension_type_opt = {});
+    explicit TextureView(ITexture& texture,
+                         const SubResource::Index& subresource_index = {},
+                         const SubResource::Count& subresource_count = {},
+                         Opt<TextureDimensionType> texture_dimension_type_opt = {});
 
     using ResourceView::operator std::string;
 

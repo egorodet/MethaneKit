@@ -44,7 +44,7 @@ class AppController
 {
 public:
     using ActionByKeyboardState = pin::Keyboard::ActionControllerBase<AppAction>::ActionByKeyboardState;
-    inline static const ActionByKeyboardState default_action_by_keyboard_state{
+    inline static const ActionByKeyboardState default_action_by_keyboard_state{ // NOSONAR - per-level default key map is intentional, always referenced fully qualified
         { { pin::Keyboard::Key::F4 }, AppAction::SwitchHeadsUpDisplayMode },
     };
     

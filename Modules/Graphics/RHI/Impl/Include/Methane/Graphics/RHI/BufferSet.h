@@ -75,7 +75,7 @@ private:
     using Impl = Methane::Graphics::META_GFX_NAME::BufferSet;
 
     Ptr<Impl> m_impl_ptr;
-    mutable Buffers m_buffers;
+    mutable Buffers m_buffers; // NOSONAR - PIMPL-side wrapper cache rebuilt by GetRefs() on the render thread
 };
 
 } // namespace Methane::Graphics::Rhi

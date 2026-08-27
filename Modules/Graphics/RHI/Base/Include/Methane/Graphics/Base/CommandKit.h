@@ -26,8 +26,10 @@ Methane command kit implementation.
 #include "Object.h"
 
 #include <Methane/Graphics/RHI/ICommandKit.h>
+#include <Methane/Instrumentation.h>
 
 #include <map>
+#include <mutex>
 
 namespace Methane::Graphics::Base
 {
@@ -62,11 +64,21 @@ private:
     using CommandListIndexById = std::map<Rhi::CommandListId, uint32_t>;
     using CommandListSetById   = std::map<CommandListSetId, Ptr<Rhi::ICommandListSet>>;
 
-    CommandListIndex GetCommandListIndexById(Rhi::CommandListId cmd_list_id) const noexcept;
-    CommandListSetId GetCommandListSetId(Rhi::CommandListIdSpan cmd_list_ids, Opt<Data::Index> frame_index_opt) const;
+    // NOTE: methods below require m_mutex to be locked by the caller
+    CommandListIndex    GetCommandListIndexById(Rhi::CommandListId cmd_list_id) const noexcept;
+    CommandListSetId    GetCommandListSetId(Rhi::CommandListIdSpan cmd_list_ids, Opt<Data::Index> frame_index_opt) const;
+    Rhi::ICommandQueue& GetQueueUnlocked() const;
+    Rhi::ICommandList&  GetListUnlocked(Rhi::CommandListId cmd_list_id) const;
 
     const Rhi::IContext&            m_context;
     Rhi::CommandListType            m_cmd_list_type;
+
+    // Command queue, lists, fences and list sets are lazily created by the const getters above,
+    // which are reachable from resource upload paths running on parallel-rendering worker threads.
+    // All accesses to the mutable members below are made with m_mutex locked, either by the public
+    // getter itself or by its caller when the access is made from a *Unlocked() helper. Static
+    // analysis can not follow the latter, so those accesses are marked with NOSONAR in CommandKit.cpp.
+    mutable TracyLockable(std::mutex, m_mutex);
     mutable Ptr<Rhi::ICommandQueue> m_cmd_queue_ptr;
     mutable Ptrs<Rhi::ICommandList> m_cmd_list_ptrs;
     mutable CommandListIndexById    m_cmd_list_index_by_id;

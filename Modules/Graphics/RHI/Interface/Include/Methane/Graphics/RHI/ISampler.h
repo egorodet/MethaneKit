@@ -51,7 +51,7 @@ struct SamplerFilter
     };
 
     SamplerFilter(MinMag min, MinMag mag, Mip mip) : min(min), mag(mag), mip(mip) { }
-    SamplerFilter(MinMag min_mag, Mip mip) : SamplerFilter(min_mag, min_mag, mip) { }
+    SamplerFilter(MinMag min_mag, Mip mip_filter) : SamplerFilter(min_mag, min_mag, mip_filter) { }
     explicit SamplerFilter(MinMag min_mag) : SamplerFilter(min_mag, Mip::NotMipmapped) { }
 
     [[nodiscard]] friend bool operator==(const SamplerFilter& left, const SamplerFilter& right)
@@ -94,7 +94,8 @@ struct SamplerAddress
 
 struct SamplerLevelOfDetail
 {
-    SamplerLevelOfDetail(float bias = 0.F, float min = 0.F, float max = std::numeric_limits<float>::max());
+    SamplerLevelOfDetail() = default;
+    explicit SamplerLevelOfDetail(float bias, float min = 0.F, float max = std::numeric_limits<float>::max());
 
     [[nodiscard]] friend bool operator==(const SamplerLevelOfDetail& left, const SamplerLevelOfDetail& right)
     {

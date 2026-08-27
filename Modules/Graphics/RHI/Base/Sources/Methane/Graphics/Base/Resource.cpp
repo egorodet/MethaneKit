@@ -115,7 +115,7 @@ bool Resource::SetOwnerQueueFamily(uint32_t family_index, Ptr<IBarriers>& out_ba
              family_index,
              m_owner_queue_family_index_opt ? "with" : "without");
 
-    if (m_owner_queue_family_index_opt)
+    if (m_owner_queue_family_index_opt.has_value())
     {
         if (!out_barriers)
             out_barriers = Rhi::IResourceBarriers::Create();

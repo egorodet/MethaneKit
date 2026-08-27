@@ -140,7 +140,9 @@ private:
 
     mutable TracyLockable(std::recursive_mutex, m_state_mutex);
     TracyLockable(std::mutex,   m_state_change_mutex);
-    std::condition_variable_any m_state_change_condition_var;
+    // condition_variable_any is required because m_state_change_mutex is tracy::Lockable<std::mutex>
+    // in profiling builds, which std::condition_variable can not wait on.
+    std::condition_variable_any m_state_change_condition_var; // NOSONAR - condition_variable_any is required, see comment above
     TRACY_GPU_SCOPE_TYPE        m_tracy_gpu_scope;
 
 #ifdef METHANE_GPU_INSTRUMENTATION_ENABLED

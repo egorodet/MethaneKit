@@ -38,7 +38,7 @@ namespace wrl = Microsoft::WRL;
 class RuntimeException : public std::runtime_error
 {
 public:
-    RuntimeException(HRESULT hr, ID3D12Device* device = nullptr);
+    explicit RuntimeException(HRESULT hr, ID3D12Device* device = nullptr);
     RuntimeException(HRESULT hr, const wrl::ComPtr<ID3DBlob>& error_blob);
 
     [[nodiscard]] HRESULT             GetResult() const noexcept { return m_result; }

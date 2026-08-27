@@ -6,7 +6,6 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=methane-powered-kit-windows&metric=alert_status)](https://sonarcloud.io/dashboard?id=methane-powered-kit-windows)
 [![CodeCov](https://codecov.io/gh/MethanePowered/MethaneKit/branch/master/graph/badge.svg?token=VBY74VXWX5)](https://codecov.io/gh/MethanePowered/MethaneKit)
 [![Test Space Metric](https://methanepowered.testspace.com/spaces/190760/badge?token=196ea878d56f2b034a8d29a9b4ba6a94c968643c)](https://methanepowered.testspace.com/spaces/190760?utm_campaign=badge&utm_medium=referral&utm_source=test "Test Cases")
-[![Gitpod Ready-to-Code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/MethanePowered/MethaneKit)
 
 **Easy to use modern 3D graphics rendering abstraction API and cross-platform application framework:**
 - **Builds on top of modern native 3D graphics APIs**: DirectX 12 on Windows, Vulkan on Linux, Metal on macOS, iOS & tvOS.
@@ -16,8 +15,6 @@
 Download [release builds](https://github.com/MethanePowered/MethaneKit/releases) with pre-built samples, tutorials, and tests to try them out.
 Check the latest build status, tests, code coverage, and analysis results or get build artifacts from [GitHub Actions](https://github.com/MethanePowered/MethaneKit/actions) CI and [Sonar Cloud](https://sonarcloud.io/organizations/methane-powered).
 See the [Build Instructions](/Build/README.md) topic for manual build instructions and start learning the [Methane Graphics RHI](/Modules/Graphics/RHI) API with [Hello Triangle](/Apps/01-HelloTriangle) and other tutorials' documentation.
-
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/MethanePowered/MethaneKit)
 
 | Platform                                                                                                                                        | Graphics API                                                                                                                                        | Master Build                                                                                                                                                                                                                                                                                   | Develop Build                                                                                                                                                                                                                                                                                     |
 |-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -150,7 +147,7 @@ For detailed features description and development plans please refer to [Modules
 ### Development Environments
 
 - Jet Brains CLion (pre-configured with [.idea](/.idea))
-- Microsoft VS Code and [GitPod](https://gitpod.io/#https://github.com/MethanePowered/MethaneKit) (pre-configured with [CMakePresets.json](/CMakePresets.json) and [.vscode/settings.json](/.vscode/settings.json))
+- Microsoft VS Code (pre-configured with [CMakePresets.json](/CMakePresets.json) and [.vscode/settings.json](/.vscode/settings.json))
 - Microsoft Visual Studio 2022
   - Solutions and projects build (generate with [Build/Windows/Build.bat](/Build/Windows/Build.bat))
   - CMake native build support (pre-configured with [CMakePresets.json](/CMakePresets.json))
